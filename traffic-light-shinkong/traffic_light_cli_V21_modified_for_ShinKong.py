@@ -11,42 +11,40 @@ Packet:  55 AA | quantity | (color number) x quantity | checksum
     length      2 * quantity + 4 bytes (4 addresses -> 12 bytes)
 The lights LATCH the last packet and keep counting down by themselves.
 
-Lighting cycle, five phases (defaults 2 + 11 + 2 + 2 + 11 = 28 s):
+Lighting cycle, five phases (defaults 5 + 15 + 5 + 3 + 15 = 43 s):
 
-    phase        CLEARANCE  TRAFFIC  ADJUST   CLEARANCE  TRAFFIC
-    0x00         red        red      red*     red        green
-    0x01         red        green    green*   red        red
-    0x02, 0x03   red        green    red*     red        red
+    phase        CLEARANCE_1  TRAFFIC  ADJUST   CLEARANCE_2  TRAFFIC
+    0x00         red          red      red*     red          green
+    0x01         red          green    green*   red          red
+    0x02, 0x03   red          green    red*     red          red
     * default; the ADJUST colour of every row is picked red or green in the UI
 
 Every light counts down the seconds left in its current colour, across
 phase borders and around the end of the cycle.  With the defaults 0x00
-shows red 17..1 then green 11..1, 0x01 red 15..1 then green 13..1, and
-0x02 / 0x03 red 17..1 then green 11..1.
+shows red 28..1 then green 11..1, 0x01 red 23..1 then green 20..1, and
+0x02 / 0x03 red 28..1 then green 15..1.
 
 UI, "Network Control" tab:
     Target IP / Port -> Connect ETH-to-RS485 / Disconnect.  While
     connected and no sequence runs, the warm flash sends red 88 one
     second and dark the next (WARM_KEEPALIVE).
     Countdown Seconds Setting
-        Traffic Light Seconds         -> TRAFFIC   (default DEFAULT_TRAFFIC)
-        Red Light Seconds for safety  -> CLEARANCE (default CLEARANCE_SECONDS)
+        Traffic Light Seconds         -> TRAFFIC   (default TRAFFIC_SECONDS)
+        Red Light Seconds for safety  -> CLEARANCE_1, CLEARANCE_2 (default CLEARANCE_1_SECONDS, CLEARANCE_2_SECONDS)
         Seconds for adjustment        -> ADJUST    (default ADJUST_SECONDS)
     Start sends one packet per second, beginning with the all-red
-    CLEARANCE; Stop returns to the warm flash.  The three settings are
+    CLEARANCE_1; Stop returns to the warm flash.  The three settings are
     locked while a sequence runs and take effect at the next Start.
     Cycle diagram: click a red / green dot (or the ADJUST bar) inside the
     yellow box to pick that row's ADJUST colour.  While a sequence runs
     the pick takes effect at the start of the next cycle, so no countdown
     on the street ever jumps.
-UI, "System Log" tab: everything that used to go to the console (also
-written to Logs/TrafficLight_<timestamp>.log).
+UI, "System Log" tab: everything that used to go to the console
 
 Run:  python traffic_light_cli_V21_modified_for_ShinKong.py
       (pythonw.exe hides the console; all output is in the log tab)
 """
 
-import os
 import queue
 import socket
 import sys
@@ -62,11 +60,12 @@ from tkinter import messagebox, scrolledtext, ttk
 # ==========================================
 QUANTITY = 4       # addresses on the bus (1-32), edit here if additional traffic lights have been installed
 
-# Lighting cycle CLEARANCE -> TRAFFIC -> ADJUST -> CLEARANCE -> TRAFFIC.
+# Lighting cycle CLEARANCE_1 -> TRAFFIC -> ADJUST -> CLEARANCE_2 -> TRAFFIC.
 # These are the defaults shown in the UI; Start uses the entered values.
-CLEARANCE_SECONDS = 2   # every light red, for safety, before each traffic phase
-DEFAULT_TRAFFIC = 11    # main red / green phase
-ADJUST_SECONDS = 2      # extra phase, red or green per row as picked in the UI
+CLEARANCE_1_SECONDS = 8  # every light red, for safety, before the first TRAFFIC phase
+CLEARANCE_2_SECONDS = 3  # every light red, for safety, before the second TRAFFIC phase
+TRAFFIC_SECONDS = 15    # main red / green phase
+ADJUST_SECONDS = 5      # extra phase, red or green per row as picked in the UI
 MAX_COUNTDOWN = 99      # every displayed number must fit 2 digits
 
 WARM_KEEPALIVE = True         # True: all lights flash red 88 / dark while no sequence is running
@@ -81,7 +80,7 @@ DEFAULT_IP = "192.168.7.161"
 DEFAULT_PORT = 1111
 
 SETTINGS_WIDTH = 440                              # left column width in px
-LOG_MAX_LINES = 3000          # on-screen log is trimmed; the log file keeps everything
+LOG_MAX_LINES = 3000          # on-screen log is trimmed; the log tap keeps the newest 3000 lines
 
 COLOR_BG = "#1e1e1e"
 COLOR_FG = "#e0e0e0"
@@ -126,7 +125,7 @@ DARK_PACKET = build_packet([("dark", 0)] * QUANTITY)
 
 # ------------------------------------------------------------ cycle layer
 
-PHASES = ("CLEARANCE", "TRAFFIC", "ADJUST", "CLEARANCE", "TRAFFIC")
+PHASES = ("CLEARANCE_1", "TRAFFIC", "ADJUST", "CLEARANCE_2", "TRAFFIC")
 ADJUST_PHASE = PHASES.index("ADJUST")
 
 
@@ -137,14 +136,15 @@ def opposite(color):
 @dataclass(frozen=True)
 class Timing:
     """Phase lengths in seconds, as entered in the UI."""
-    traffic: int = DEFAULT_TRAFFIC
-    clearance: int = CLEARANCE_SECONDS
+    traffic: int = TRAFFIC_SECONDS
+    clearance_1: int = CLEARANCE_1_SECONDS
+    clearance_2: int = CLEARANCE_2_SECONDS
     adjust: int = ADJUST_SECONDS
 
     def phase_seconds(self):
         """Seconds of every phase, in PHASES order."""
-        return (self.clearance, self.traffic, self.adjust,
-                self.clearance, self.traffic)
+        return (self.clearance_1, self.traffic, self.adjust,
+                self.clearance_2, self.traffic)
 
     @property
     def period(self):
@@ -413,8 +413,8 @@ class ModernButton(tk.Button):
 
 
 class TimingDiagram(tk.Canvas):
-    """One cycle per LIGHT_GROUPS row as pill bars, CLEARANCE -> TRAFFIC ->
-    ADJUST -> CLEARANCE -> TRAFFIC, with captions computed from the
+    """One cycle per LIGHT_GROUPS row as pill bars, CLEARANCE_1 -> TRAFFIC ->
+    ADJUST -> CLEARANCE_2 -> TRAFFIC, with captions computed from the
     entered seconds.  The yellow box holds a red / green picker above each
     ADJUST bar; clicking a dot (or the bar itself) calls
     on_adjust(row, color).  The phase being sent gets a white rim."""
@@ -516,7 +516,7 @@ class TimingDiagram(tk.Canvas):
                               width=2)
         self.create_line(axm, bottom, axm, bottom + 6, fill=COLOR_NOTE, width=2)
         self.create_text(axm, bottom + 8, anchor="n", justify=tk.LEFT,
-                         text="Can choose Red or\nGreen for adjustment",
+                         text="Seconds for adjustment",
                          fill=COLOR_NOTE, font=FONT_UI)
 
         conflicts = green_conflicts(self._timing, self._adjust)
@@ -535,9 +535,6 @@ class TrafficLightApp(tk.Tk):
         self.configure(bg=COLOR_BG)
         self._setup_style()
 
-        os.makedirs("Logs", exist_ok=True)
-        self.log_file = (f"Logs/TrafficLight_"
-                         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         self._log_queue = queue.Queue()
 
         self.sock = None
@@ -590,11 +587,6 @@ class TrafficLightApp(tk.Tk):
             if total > LOG_MAX_LINES:
                 self.log_display.delete("1.0", f"{total - LOG_MAX_LINES}.0")
             self.log_display.see(tk.END)
-            try:
-                with open(self.log_file, "a", encoding="utf-8") as f:
-                    f.write("".join(text + "\n" for text, _ in lines))
-            except OSError:
-                pass
         self.after(100, self._drain_log_queue)
 
     # --------------------------------------------------------------- ui
@@ -664,16 +656,19 @@ class TrafficLightApp(tk.Tk):
         tk.Label(left, text="Countdown Seconds Setting", bg=COLOR_BG,
                  fg=COLOR_TITLE, font=FONT_TITLE).pack(anchor=tk.W, pady=(25, 5))
         self.traffic_entry = self._setting_row(
-            left, "Traffic Light Seconds:", DEFAULT_TRAFFIC)
-        self.clearance_entry = self._setting_row(
-            left, "Red Light Seconds for safety :", CLEARANCE_SECONDS)
+            left, "Traffic Light Seconds:", TRAFFIC_SECONDS)
+        self.clearance_1_entry = self._setting_row(
+            left, "Red Light Seconds for safety :", CLEARANCE_1_SECONDS)
+        # second box on the same row (the row frame is the first box's master)
+        self.clearance_2_entry = self._entry(self.clearance_1_entry.master, CLEARANCE_2_SECONDS, width=5)
+        self.clearance_2_entry.config(justify=tk.CENTER)
+        self.clearance_2_entry.pack(side=tk.LEFT, padx=(20, 5))
         self.adjust_entry = self._setting_row(
             left, "Seconds for adjustment :", ADJUST_SECONDS)
         self.settings_error_var = tk.StringVar()
         tk.Label(left, textvariable=self.settings_error_var, bg=COLOR_BG,
                  fg=COLOR_ERROR, font=FONT_UI, justify=tk.LEFT, anchor=tk.W,
-                 wraplength=SETTINGS_WIDTH - 10).pack(anchor=tk.W, padx=5,
-                                                      pady=(2, 0))
+                 wraplength=SETTINGS_WIDTH - 10).pack(anchor=tk.W, padx=5, pady=(2, 0))
 
         run_frame = tk.Frame(left, bg=COLOR_BG)
         run_frame.pack(fill=tk.X, pady=(38, 5))
@@ -695,7 +690,7 @@ class TrafficLightApp(tk.Tk):
         self.diagram = TimingDiagram(right, self._on_adjust_picked, height=320)
         self.diagram.pack(fill=tk.X, anchor=tk.N, pady=(14, 0))
 
-        for entry in (self.traffic_entry, self.clearance_entry, self.adjust_entry):
+        for entry in (self.traffic_entry, self.clearance_1_entry, self.clearance_2_entry, self.adjust_entry):
             entry.bind("<KeyRelease>", lambda _e: self._on_settings_changed())
         self._on_settings_changed()
 
@@ -724,20 +719,21 @@ class TrafficLightApp(tk.Tk):
         """Validated Timing from the entries; raises ValueError."""
         try:
             timing = Timing(traffic=int(self.traffic_entry.get().strip()),
-                            clearance=int(self.clearance_entry.get().strip()),
+                            clearance_1=int(self.clearance_1_entry.get().strip()),
+                            clearance_2=int(self.clearance_2_entry.get().strip()),
                             adjust=int(self.adjust_entry.get().strip()))
         except ValueError:
-            raise ValueError("Please enter whole numbers.")
+            raise ValueError("Please enter an integer.")
         if timing.traffic < 1:
             raise ValueError("Traffic Light Seconds must be at least 1.")
-        if timing.clearance < 0:
+        if timing.clearance_1 < 0 or timing.clearance_2 < 0:
             raise ValueError("Red Light Seconds for safety cannot be negative.")
         if timing.adjust < 0:
             raise ValueError("Seconds for adjustment cannot be negative.")
         # the largest displayed countdown is the longest red run,
-        # 2 x clearance + traffic + adjustment, and every number must fit 2 digits
-        if 2 * timing.clearance + timing.traffic + timing.adjust > MAX_COUNTDOWN:
-            raise ValueError(f"2 x Red-for-safety + Traffic + Adjustment must be "
+        # clearance 1 + traffic + adjustment + clearance 2, and every number must fit 2 digits
+        if timing.clearance_1 + timing.clearance_2 + timing.traffic + timing.adjust > MAX_COUNTDOWN:
+            raise ValueError(f"Both Red-for-safety + Traffic + Adjustment must be "
                              f"<= {MAX_COUNTDOWN} (largest displayed countdown).")
         return timing
 
@@ -754,7 +750,7 @@ class TrafficLightApp(tk.Tk):
 
     def _set_settings_enabled(self, enabled):
         state = tk.NORMAL if enabled else tk.DISABLED
-        for entry in (self.traffic_entry, self.clearance_entry, self.adjust_entry):
+        for entry in (self.traffic_entry, self.clearance_1_entry, self.clearance_2_entry, self.adjust_entry):
             entry.config(state=state)
 
     def _on_adjust_picked(self, row, color):
