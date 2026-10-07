@@ -11,7 +11,7 @@ Packet:  55 AA | quantity | (color number) x quantity | checksum
     length      2 * quantity + 4 bytes (4 addresses -> 12 bytes)
 The lights LATCH the last packet and keep counting down by themselves.
 
-Lighting cycle, five phases (defaults 5 + 15 + 5 + 3 + 15 = 43 s):
+Lighting cycle, five phases (defaults 8 + 15 + 5 + 3 + 15 = 46 s):
 
     phase        CLEARANCE_1  TRAFFIC  ADJUST   CLEARANCE_2  TRAFFIC
     0x00         red          red      red*     red          green
@@ -21,8 +21,18 @@ Lighting cycle, five phases (defaults 5 + 15 + 5 + 3 + 15 = 43 s):
 
 Every light counts down the seconds left in its current colour, across
 phase borders and around the end of the cycle.  With the defaults 0x00
-shows red 28..1 then green 11..1, 0x01 red 23..1 then green 20..1, and
-0x02 / 0x03 red 28..1 then green 15..1.
+shows red 31..1 then green 15..1, 0x01 red 26..1 then green 20..1, and
+0x02 / 0x03 red 31..1 then green 15..1.
+
+Auto run (AUTO_RUN = True), for an unattended PC:
+    At program start the UI connects DEFAULT_IP:DEFAULT_PORT and starts
+    the sequence with the default settings by itself, retrying the
+    connection every RETRY_SECONDS until the ETH-to-RS485 answers.  If
+    the link drops, it reconnects and restarts from the all-red
+    CLEARANCE_1.  Stop or Disconnect pauses auto run until Start is
+    pressed again.  Only one copy of the program can run at a time.
+    To launch the program when Windows starts, run install_autostart.ps1
+    (next to this file) once and turn on Windows automatic sign-in.
 
 UI, "Network Control" tab:
     Target IP / Port -> Connect ETH-to-RS485 / Disconnect.  While
@@ -33,7 +43,7 @@ UI, "Network Control" tab:
         Red Light Seconds for safety  -> CLEARANCE_1, CLEARANCE_2 (default CLEARANCE_1_SECONDS, CLEARANCE_2_SECONDS)
         Seconds for adjustment        -> ADJUST    (default ADJUST_SECONDS)
     Start sends one packet per second, beginning with the all-red
-    CLEARANCE_1; Stop returns to the warm flash.  The three settings are
+    CLEARANCE_1; Stop returns to the warm flash.  The seconds settings are
     locked while a sequence runs and take effect at the next Start.
     Cycle diagram: click a red / green dot (or the ADJUST bar) inside the
     yellow box to pick that row's ADJUST colour.  While a sequence runs
@@ -69,6 +79,11 @@ ADJUST_SECONDS = 5      # extra phase, red or green per row as picked in the UI
 MAX_COUNTDOWN = 99      # every displayed number must fit 2 digits
 
 WARM_KEEPALIVE = True         # True: all lights flash red 88 / dark while no sequence is running
+
+AUTO_RUN = True               # True: connect and start the sequence by itself at program start, and
+                              # reconnect / restart after a link loss, until the operator presses Stop or Disconnect
+RETRY_SECONDS = 5             # wait between automatic connection attempts
+INSTANCE_MUTEX = "ShinKongTrafficLight"   # Windows mutex name that keeps a second copy from running
 
 HEAD = bytes([0x55, 0xAA])
 COLOR_CODES = {"green": 1, "yellow": 2, "red": 3, "dark": 4}
@@ -544,6 +559,8 @@ class TrafficLightApp(tk.Tk):
         self.timing = Timing()            # last valid settings; locked while running
         self.adjust_colors = [group.default_adjust for group in LIGHT_GROUPS]
         self._shown_position = None
+        self.keep_running = AUTO_RUN      # auto run: keep the link and the sequence up by itself
+        self._retry_job = None            # pending automatic connection attempt (after id)
 
         self.setup_ui()
         self._drain_log_queue()
@@ -553,8 +570,11 @@ class TrafficLightApp(tk.Tk):
         sys.stdout = LogRedirector(self.log, "CORE")
         sys.stderr = LogRedirector(self.log, "ERROR")
 
-        self.log(f"Started (QUANTITY={QUANTITY}, WARM_KEEPALIVE={WARM_KEEPALIVE})")
+        self.log(f"Started (QUANTITY={QUANTITY}, WARM_KEEPALIVE={WARM_KEEPALIVE}, "
+                 f"AUTO_RUN={AUTO_RUN})")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        if self.keep_running:
+            self._retry_job = self.after(1000, self._auto_connect)   # once the window is up
 
     # ------------------------------------------------------------ style
     def _setup_style(self):
@@ -779,6 +799,7 @@ class TrafficLightApp(tk.Tk):
         if self.sock is not None:
             self.log("Already connected.", "WARN")
             return
+        self._cancel_retry()                # this attempt replaces a pending one
         ip = self.ip_entry.get().strip() or DEFAULT_IP
         try:
             port = int(self.port_entry.get().strip() or DEFAULT_PORT)
@@ -827,6 +848,7 @@ class TrafficLightApp(tk.Tk):
         self.log("Disconnected from ETH-to-RS485")
 
     def net_disconnect(self):
+        self._pause_auto_run()
         self._stop_runner()
         self._close_link()
         self._set_connected(False, "Disconnected")
@@ -842,6 +864,46 @@ class TrafficLightApp(tk.Tk):
         self._set_settings_enabled(True)
         self.seq_status_var.set("Sequence: idle -- warm flash red 88 / dark"
                                 if connected else "Sequence: not connected")
+        # every link change ends here: auto run starts the sequence or retries
+        if self.keep_running:
+            if connected:
+                self._auto_start()
+            else:
+                self._schedule_retry()
+
+    # -------------------------------------------------------- auto run
+    def _auto_connect(self):
+        self._retry_job = None
+        if self.keep_running and self.sock is None:
+            self.net_connect()
+
+    def _auto_start(self):
+        try:
+            self._read_settings()
+        except ValueError as exc:           # no dialog: nobody may be at the PC
+            self.log(f"Auto run cannot start the sequence: {exc}", "ERROR")
+            return
+        self.start_sequence()
+
+    def _schedule_retry(self):
+        if self._retry_job is None:
+            self.log(f"Auto run: next connection attempt in {RETRY_SECONDS} s")
+            self._retry_job = self.after(RETRY_SECONDS * 1000, self._auto_connect)
+        self.btn_disconnect.config(state=tk.NORMAL)   # lets the operator cancel the retries
+        self.seq_status_var.set(f"Sequence: auto run -- retry in {RETRY_SECONDS} s")
+
+    def _cancel_retry(self):
+        if self._retry_job is not None:
+            self.after_cancel(self._retry_job)
+            self._retry_job = None
+
+    def _pause_auto_run(self):
+        """Operator pressed Stop or Disconnect: no automatic reconnect or
+        restart until Start is pressed again."""
+        self._cancel_retry()
+        if self.keep_running:
+            self.keep_running = False
+            self.log("Auto run paused by the operator; Start resumes it")
 
     # -------------------------------------------------------- sequence
     def start_sequence(self):
@@ -875,6 +937,7 @@ class TrafficLightApp(tk.Tk):
         self.seq_status_var.set("Sequence: RUNNING")
         self.log(f"Sequence started (packet length {2 * QUANTITY + 4} bytes, "
                  f"{QUANTITY} addresses)", "SUCCESS")
+        self.keep_running = AUTO_RUN        # from now on recover from link losses by itself
 
     def _refresh_running_view(self):
         """Mirror the packet being sent: white rim on the active phase and
@@ -910,6 +973,7 @@ class TrafficLightApp(tk.Tk):
         if not self._stop_runner():
             self.log("No sequence is running.", "WARN")
             return
+        self._pause_auto_run()
         if self.warmer is not None:
             self.warmer.resume()            # back to the warm flash
         self.btn_start.config(state=tk.NORMAL)
@@ -926,13 +990,34 @@ class TrafficLightApp(tk.Tk):
 
     # ----------------------------------------------------------- close
     def on_close(self):
+        self.keep_running = False
+        self._cancel_retry()
         self._stop_runner()
         self._close_link()
         sys.stdout, sys.stderr = self._stdout, self._stderr
         self.destroy()
 
 
+def another_copy_running():
+    """True if this program already runs in this Windows session.  Two
+    copies would open two links and interleave their packets on the bus.
+    The named mutex lives until the process ends; any failure here lets
+    the program start, so an unattended boot is never blocked."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW(None, False, INSTANCE_MUTEX)
+    return ctypes.get_last_error() == 183          # ERROR_ALREADY_EXISTS
+
+
 if __name__ == "__main__":
     if not 1 <= QUANTITY <= 32:
         sys.exit("QUANTITY must be 1-32")
+    if another_copy_running():
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo("LED Control System Ultimate",
+                            "The traffic-light controller is already running.")
+        sys.exit()
     TrafficLightApp().mainloop()
