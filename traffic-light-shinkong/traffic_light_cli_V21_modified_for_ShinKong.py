@@ -30,7 +30,8 @@ Auto run (AUTO_RUN = True), for an unattended PC:
     connection every RETRY_SECONDS until the ETH-to-RS485 answers.  If
     the link drops, it reconnects and restarts from the all-red
     CLEARANCE_1.  Stop or Disconnect pauses auto run until Start is
-    pressed again.  Only one copy of the program can run at a time.
+    pressed again.  Only one program at a time can drive DEFAULT_IP;
+    programs for other converters can run alongside.
     To launch the program when Windows starts, run install_autostart.ps1
     (next to this file) once and turn on Windows automatic sign-in.
 
@@ -83,7 +84,7 @@ WARM_KEEPALIVE = True         # True: all lights flash red 88 / dark while no se
 AUTO_RUN = True               # True: connect and start the sequence by itself at program start, and
                               # reconnect / restart after a link loss, until the operator presses Stop or Disconnect
 RETRY_SECONDS = 5             # wait between automatic connection attempts
-INSTANCE_MUTEX = "ShinKongTrafficLight"   # Windows mutex name that keeps a second copy from running
+INSTANCE_MUTEX = "ShinKongTrafficLight"   # + "_" + DEFAULT_IP: one running program per ETH-to-RS485
 
 HEAD = bytes([0x55, 0xAA])
 COLOR_CODES = {"green": 1, "yellow": 2, "red": 3, "dark": 4}
@@ -999,15 +1000,16 @@ class TrafficLightApp(tk.Tk):
 
 
 def another_copy_running():
-    """True if this program already runs in this Windows session.  Two
-    copies would open two links and interleave their packets on the bus.
+    """True if a program already drives DEFAULT_IP in this Windows session.
+    Two programs on one ETH-to-RS485 would interleave their packets on the
+    bus; programs for different converters (B3, B4) may run together.
     The named mutex lives until the process ends; any failure here lets
     the program start, so an unattended boot is never blocked."""
     if sys.platform != "win32":
         return False
     import ctypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateMutexW(None, False, INSTANCE_MUTEX)
+    kernel32.CreateMutexW(None, False, f"{INSTANCE_MUTEX}_{DEFAULT_IP}")
     return ctypes.get_last_error() == 183          # ERROR_ALREADY_EXISTS
 
 
@@ -1018,6 +1020,7 @@ if __name__ == "__main__":
         root = tk.Tk()
         root.withdraw()
         messagebox.showinfo("LED Control System Ultimate",
-                            "The traffic-light controller is already running.")
+                            f"A traffic-light controller for {DEFAULT_IP} "
+                            f"is already running.")
         sys.exit()
     TrafficLightApp().mainloop()

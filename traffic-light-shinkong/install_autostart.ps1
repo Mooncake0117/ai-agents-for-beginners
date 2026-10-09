@@ -16,17 +16,24 @@
     Remove the autostart:     powershell -ExecutionPolicy Bypass -File .\install_autostart.ps1 -Uninstall
 
     Options:
-        -Script   controller file (default: the V21 file next to this script)
-        -PythonW  full path of pythonw.exe (default: found through the py launcher or PATH)
+        -Script    controller file (default: the V21 file next to this script)
+        -TaskName  task name (default "ShinKong Traffic Light"); running the script
+                   again with the same name replaces that task, a new name adds one
+        -PythonW   full path of pythonw.exe (default: found through the py launcher or PATH)
+
+    Several controllers (one per ETH-to-RS485), each starting at sign-in:
+        .\install_autostart.ps1 -Script .\controller_B3.py -TaskName "ShinKong Traffic Light B3"
+        .\install_autostart.ps1 -Script .\controller_B4.py -TaskName "ShinKong Traffic Light B4"
+        .\install_autostart.ps1 -Uninstall -TaskName "ShinKong Traffic Light B4"
 #>
 param(
     [switch]$Uninstall,
     [string]$Script = (Join-Path $PSScriptRoot "traffic_light_cli_V21_modified_for_ShinKong.py"),
-    [string]$PythonW = ""
+    [string]$PythonW = "",
+    [string]$TaskName = "ShinKong Traffic Light"
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "ShinKong Traffic Light"
 $User = "$env:USERDOMAIN\$env:USERNAME"
 
 if ($Uninstall) {
@@ -69,7 +76,7 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) 
 try {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force `
-        -Description "ShinKong traffic-light controller, starts at sign-in of $User" | Out-Null
+        -Description "ShinKong traffic-light controller $(Split-Path -Leaf $Script), starts at sign-in of $User" | Out-Null
 } catch {
     throw ("Could not register the task ($($_.Exception.Message)). " +
            "Open PowerShell with 'Run as administrator' and run this script again.")
