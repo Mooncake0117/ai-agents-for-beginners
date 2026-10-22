@@ -1,6 +1,6 @@
 ---
 name: b3-camera-log-analysis
-description: Analyse the ShinKong B3 parking-lot IP-camera trigger logs (HTTP_Server.py output such as B3_log_*.txt, UTF-16 from PowerShell) - find every trip through the HuoShih <-> GuiLan connecting lane, check hour by hour which camera boxes and cross-lines (IP-CAM-A to F) fired or missed, detect camera outages, attribute noisy zones, and measure per-stage detection rates and timing for tuning the smart traffic-light confidence weights. Use it whenever the user uploads or mentions a B3 log, asks how often a camera, box or line missed, whether detections are reliable, how long cars take between zones, wants a new log compared with earlier ones, or asks to re-run "the analysis" - even if they do not name this skill.
+description: Analyse the ShinKong B3 parking-lot IP-camera trigger logs (HTTP_Server.py output such as B3_log_*.txt, UTF-16 from PowerShell) - find every trip through the connecting lane between HuoShih and GuiLan, check hour by hour which camera boxes and cross-lines (IP-CAM-A to F) fired or missed, detect camera outages, attribute noisy zones, and measure per-stage detection rates and timing for tuning the smart traffic-light confidence weights. Use it whenever the user uploads or mentions a B3 log, asks how often a camera, box or line missed, whether detections are reliable, how long cars take between zones, wants a new log compared with earlier ones, or asks to re-run "the analysis" - even if they do not name this skill.
 ---
 
 # B3 camera log analysis
