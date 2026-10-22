@@ -310,6 +310,206 @@ class Analyser:
                         for alt in st["alts"]})
         return out
 
+    # scorecard -------------------------------------------------------------
+    def scorecard(self, good, odd, out, lines):
+        """Sections 10 and 11.  Uses 'clean' trips (no other lane trip within
+        clean_window_s) so that a detection can only come from the trip's own car."""
+        P = self.p
+        target, cw, look = P["target_pct"], P["clean_window_s"], P["placement_window_s"]
+        tol = P["order_tolerance_s"]
+        dirs = list(self.routes)
+        times = sorted(tr.get("t0") or tr["start"] for tr in good + odd)
+
+        def is_clean(t):
+            return bisect.bisect_right(times, t + cw) - bisect.bisect_left(times, t - cw) <= 1
+
+        clean = {d: [tr for tr in good if tr["dir"] == d and is_clean(tr["t0"])] for d in dirs}
+        cache = {}
+
+        def entry_near(pair, t0):
+            """Entry time of the burst of `pair` closest to t0 (within +-look), or None."""
+            if pair not in cache:
+                bs = bursts(self.index.get(pair, ()), P["run_gap_s"])
+                cache[pair] = ([b[0] for b in bs], [b[1] for b in bs])
+            starts, ends = cache[pair]
+            best = None
+            for i in range(bisect.bisect_left(ends, t0 - look), bisect.bisect_right(starts, t0 + look)):
+                dist = 0 if starts[i] <= t0 <= ends[i] else min(abs(starts[i] - t0), abs(ends[i] - t0))
+                if best is None or dist < best[0]:
+                    best = (dist, starts[i])
+            return None if best is None else best[1]
+
+        def is_line(pair):
+            return pair[1].startswith("CL")
+
+        lines.append(f"\n## 10. Detection scorecard (target {target}%)\n")
+        lines.append(
+            "*route order* = hit rate from the route match (section 6), which decides the status; "
+            f"*clean trips* = trips with no other car in the lane within {cw} s, counting the stage "
+            f"as fired if any of its zones fired within {look} s, in any order (a cross-check: much "
+            "higher than the route-order rate means the zone fires, but not where the route says); "
+            "*wrong direction* = a line firing while the car of a clean opposite-direction trip was "
+            "in front of that camera (flagged from 2 occurrences); *no trip* = share of the line's "
+            "bursts with no lane trip at all (section 8).  Missed trips are listed so the camera "
+            "recording can be checked at those times.\n")
+        out["scorecard"] = {}
+        attribution = out.get("attribution", {})
+        for d in dirs:
+            stages = self.routes[d]["stages"]
+            dtrips = [tr for tr in good if tr["dir"] == d]
+            n, nc = len(dtrips), len(clean[d])
+            if not n:
+                continue
+            others = [tr for o in dirs if o != d for tr in clean[o]]
+
+            def in_view(alt, tr):
+                """When did line `alt` fire while the opposite trip's car was in front of
+                that camera (its own matched stages on the same camera, +-tolerance)?
+                None = the camera never saw that trip, False = the line stayed quiet."""
+                st_o = self.routes[tr["dir"]]["stages"]
+                ch = tr["chain"]
+                spans_o = [(f, e) for s_, f, e in zip(st_o, ch["first"], ch["end"])
+                           if f is not None and any(c == alt[0] for c, _ in s_["alts"])]
+                if not spans_o:
+                    return None
+                a = min(f for f, _ in spans_o) - tol
+                b = max(min(e, f + P["chain_window_s"]) for f, e in spans_o) + tol
+                t = self.first_occ([alt], a, b)
+                return False if t is None else t
+
+            rows, flags = [], []
+            for k, st in enumerate(stages):
+                hits = sum(tr["hit"][k] for tr in dtrips)
+                c_hits = sum(any(entry_near(alt, tr["t0"]) is not None for alt in st["alts"])
+                             for tr in clean[d])
+                wrong, noise = [], []
+                for alt in st["alts"]:
+                    if not is_line(alt) or alt not in self.index:
+                        continue
+                    seen = [v for v in (in_view(alt, tr) for tr in others) if v is not None]
+                    if seen:
+                        w = sum(v is not False for v in seen)
+                        wrong.append((100 * w / len(seen), f"{alt[0]} {alt[1]}", w))
+                    at = attribution.get(f"{alt[0]} {alt[1]}")
+                    if at and at.get("bursts"):
+                        noise.append((100 * at.get("unrelated", 0) / at["bursts"], f"{alt[0]} {alt[1]}"))
+                worst_w = max(wrong) if wrong else None
+                worst_n = max(noise) if noise else None
+                problems = []
+                if 100 * hits / n < target:
+                    problems.append("misses")
+                if nc and 100 * c_hits / nc - 100 * hits / n >= 10:
+                    problems.append("check route order (fires, but not where configured)")
+                if worst_w and worst_w[0] > 100 - target and worst_w[2] >= 2:
+                    problems.append(f"wrong direction ({worst_w[1]})")
+                if worst_n and worst_n[0] > 100 - target:
+                    problems.append(f"fires without a trip ({worst_n[1]})")
+                missed = [fmt(tr["t0"]) for tr in sorted(dtrips, key=lambda tr: tr["t0"]) if not tr["hit"][k]]
+                rows.append([st["label"], f"{hits}/{n} ({pct(hits, n)})",
+                             f"{c_hits}/{nc} ({pct(c_hits, nc)})" if nc else "-",
+                             f"{worst_w[0]:.0f}% {worst_w[1]} ({worst_w[2]}x)" if worst_w else "-",
+                             f"{worst_n[0]:.0f}% {worst_n[1]}" if worst_n else "-",
+                             "OK" if not problems else "**" + ", ".join(problems) + "**",
+                             ", ".join(missed[:6]) + (f" (+{len(missed) - 6} more)" if len(missed) > 6 else "")
+                             or "-"])
+                if problems:
+                    flags.append(f"{st['label']}: {', '.join(problems)}")
+                out["scorecard"].setdefault(d, []).append({
+                    "stage": st["label"], "route_hits": hits, "trips": n, "clean_hits": c_hits,
+                    "clean_trips": nc, "wrong_direction_pct": worst_w and round(worst_w[0]),
+                    "no_trip_pct": worst_n and round(worst_n[0]), "problems": problems, "missed": missed})
+            lines.append(f"\n**{self.routes[d]['name']}**: {n} trips ({nc} clean); one miss = "
+                         f"{100 / n:.1f}% of all trips\n")
+            lines.append(table(["Stage", "hit, route order", "hit, clean trips", "wrong direction",
+                                "no trip", "status", "missed trips"], rows))
+            lines.append("\nBelow target: " + ("; ".join(flags) if flags else "none"))
+
+            # every cross-line of this direction on its own
+            lrows = []
+            for k, st in enumerate(stages):
+                for alt in st["alts"]:
+                    if not is_line(alt) or alt not in self.index:
+                        continue
+                    own = sum(tr["alt"][k][alt] for tr in dtrips)
+                    seen = [(v, tr) for tr in others if (v := in_view(alt, tr)) is not None]
+                    fired = [(v, tr) for v, tr in seen if v is not False]
+                    offs = sorted(v - tr["t0"] for v, tr in fired)
+                    mates = [p for p in self.index if p[0] == alt[0] and is_line(p) and p != alt]
+                    together = sum(any(self.first_occ([p], v - 1, v + 1) is not None for p in mates)
+                                   for v, _ in fired)
+                    at = attribution.get(f"{alt[0]} {alt[1]}", {})
+                    lrows.append([f"{alt[0]} {alt[1]}", f"{own}/{n} ({pct(own, n)})",
+                                  f"{len(fired)}/{len(seen)} ({pct(len(fired), len(seen))})" if seen else "-",
+                                  f"{statistics.median(offs):+.0f} ({offs[0]:+d} .. {offs[-1]:+d})"
+                                  if offs else "-",
+                                  f"{together}/{len(fired)}" if fired and mates else "-",
+                                  pct(at.get("unrelated", 0), at.get("bursts", 0))])
+            if lrows:
+                lines.append(f"\nEvery cross-line used {self.routes[d]['name'].split(' (')[0].lower()}: "
+                             "hit = fired on this direction's trips; wrong direction = fired while a "
+                             "clean opposite-direction car was in front of the camera; *when* = seconds "
+                             "from that car's anchor (B CL2 for a southbound line, B CL1 for a northbound "
+                             "one) to the wrong firing, median (range); *with other line* = wrong firings "
+                             "within 1 s of another line of the same camera, i.e. one car set off both "
+                             "lines at once\n")
+                lines.append(table(["Line", "hit", "wrong direction", "when (s)", "with other line",
+                                    "no trip"], lrows))
+
+        lines.append("\n## 11. Placement and order check\n")
+        lines.append(f"Where each zone really fires on clean trips: entry time of its burst nearest to "
+                     f"the trip anchor, in seconds relative to the anchor (median and 10-90% range). "
+                     f"A stage that fires more than {tol} s out of the configured order is flagged: "
+                     f"either the route order in config.json is wrong, or the zone is not where it "
+                     f"was meant to be.\n")
+        out["placement"] = {}
+        for d in dirs:
+            stages = self.routes[d]["stages"]
+            cl = clean[d]
+            if not cl:
+                continue
+            anchor = self.routes[d]["primary_anchors"][0].replace(":", " ")
+            meds, rows = [], []
+            for k, st in enumerate(stages):
+                stage_offs = []
+                for tr in cl:
+                    es = [entry_near(alt, tr["t0"]) for alt in st["alts"]]
+                    es = [e for e in es if e is not None]
+                    if es:
+                        stage_offs.append(min(es) - tr["t0"])
+                meds.append(statistics.median(stage_offs) if stage_offs else None)
+                for alt in st["alts"]:
+                    if alt not in self.index:
+                        continue
+                    offs = sorted(e - tr["t0"] for tr in cl
+                                  if (e := entry_near(alt, tr["t0"])) is not None)
+                    rows.append([k + 1, f"{alt[0]} {alt[1]}", pct(len(offs), len(cl)),
+                                 f"{statistics.median(offs):+.0f}" if offs else "-",
+                                 f"{offs[int(0.1 * (len(offs) - 1))]:+d} .. {offs[int(0.9 * (len(offs) - 1))]:+d}"
+                                 if offs else "-", ""])
+            # order notes per stage, attached to the stage's first row
+            notes = {}
+            for k in range(len(stages)):
+                if meds[k] is None:
+                    continue
+                msg = []
+                for i in range(k):
+                    if meds[i] is not None and meds[k] < meds[i] - tol:
+                        msg.append(f"fires {meds[i] - meds[k]:.0f} s before {stages[i]['label']}")
+                for j in range(k + 1, len(stages)):
+                    if meds[j] is not None and meds[k] > meds[j] + tol:
+                        msg.append(f"fires {meds[k] - meds[j]:.0f} s after {stages[j]['label']}")
+                if msg:
+                    notes[k] = "**" + "; ".join(msg) + "**"
+            for r in rows:
+                if r[0] - 1 in notes:
+                    r[5] = notes.pop(r[0] - 1)
+            order = [st["label"] for _, st in sorted(
+                ((m, st) for m, st in zip(meds, stages) if m is not None), key=lambda x: x[0])]
+            lines.append(f"\n**{self.routes[d]['name']}**: {len(cl)} clean trips, anchor {anchor}\n")
+            lines.append(table(["Stage #", "Zone", "fired", "median s", "10-90% s", "order note"], rows))
+            lines.append("\nOrder by median entry time: " + " -> ".join(order))
+            out["placement"][d] = {"order": order, "medians": meds}
+
     # report ----------------------------------------------------------------
     def run(self):
         P = self.p
@@ -575,6 +775,9 @@ class Analyser:
             rows.append([c, len(gaps), "; ".join(f"{fmt(a)} to {fmt(b)} ({(b - a) // 60} min)"
                                                  for a, b in gaps[:8]) + (" ..." if len(gaps) > 8 else "") or "-"])
         lines.append(table(["Camera", "silences", "periods"], rows))
+
+        # 10-11. scorecard against the accuracy target, placement / order check
+        self.scorecard(good, odd, out, lines)
 
         warnings = out["warnings"]
         if warnings:

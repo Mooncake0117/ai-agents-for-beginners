@@ -1,14 +1,15 @@
 ---
 name: b3-camera-log-analysis
-description: Analyse the ShinKong B3 parking-lot IP-camera trigger logs (HTTP_Server.py output such as B3_log_*.txt, UTF-16 from PowerShell) - find every trip through the connecting lane between HuoShih and GuiLan, check hour by hour which camera boxes and cross-lines (IP-CAM-A to F) fired or missed, detect camera outages, attribute noisy zones, and measure per-stage detection rates and timing for tuning the smart traffic-light confidence weights. Use it whenever the user uploads or mentions a B3 log, asks how often a camera, box or line missed, whether detections are reliable, how long cars take between zones, wants a new log compared with earlier ones, or asks to re-run "the analysis" - even if they do not name this skill.
+description: Analyse the ShinKong B3 parking-lot IP-camera trigger logs (HTTP_Server.py output such as B3_log_*.txt, UTF-16 from PowerShell) - find every trip through the connecting lane between HuoShih and GuiLan, check hour by hour which camera boxes and cross-lines (IP-CAM-A to F) fired or missed, detect camera outages, attribute noisy zones, and measure per-stage detection rates and timing for tuning the smart traffic-light confidence weights, score every detection against the 98% target and advise which boxes or lines to move, delete or redirect. Use it whenever the user uploads or mentions a B3 log, asks how often a camera, box or line missed, whether detections are reliable, how long cars take between zones, wants a new log compared with earlier ones, or asks to re-run "the analysis" - even if they do not name this skill.
 ---
 
 # B3 camera log analysis
 
 The B3 project controls four traffic lights (0x00 HuoShih arterial, 0x01 lane exit
 northbound, 0x02/0x03 GuiLan main lanes) from six AI cameras that POST messages like
-`Box-1_triggered.` / `Cross-Line-2_triggered.` to an HTTP test server about 10 times a
-second while a vehicle is in a zone. The user records them with
+`Box-1_triggered.` / `Cross-Line-2_triggered.` to an HTTP test server (since 10/21: one
+message per line crossing, at most one per second while a box is occupied; before that
+about 10 per second). The user records them with
 `uv run python -u HTTP_Server.py > B3_log.txt 2>&1` and uploads the file. This skill
 turns such a log into the numbers that decide the smart controller's design: which
 detections can be trusted, which fail, and how long each step of a trip takes.
@@ -74,7 +75,25 @@ Then read the Markdown report (it is a few hundred lines) and answer from it.
    D CL1 80% unrelated). Two-way zones (A B1, A B2, B boxes, C/D/E B2) show how often a
    detection belongs to each direction, which is why order matters in the controller.
 9. **Camera silences**: gaps of `silence_report_min`+ minutes per camera. Night-time
-   gaps are normal; a gap while other cameras report trips is an outage.
+   gaps are normal (hospital car park: almost no lane traffic 23:00-07:00, while A/F
+   still see arterial traffic); a gap while other cameras report trips is an outage.
+10. **Detection scorecard** against `target_pct` (98%), the user's acceptance bar before
+    the event/confidence engine is written. Per stage: *hit, route order* (decides the
+    status), *hit, clean trips* (trips with no other lane trip within `clean_window_s`,
+    stage counted if it fired anywhere near; much higher than the route-order rate means
+    the zone fires but not where the route says), *wrong direction* (a direction-specific
+    line fired while a clean opposite-direction car was in front of that camera, flagged
+    from 2 occurrences), *no trip* (section 8 unrelated share), a status and the times
+    of every missed trip, so the user can check the camera recording. Below each
+    direction, every cross-line on its own, with *when* the wrong firings happen
+    (seconds from the opposite car's B anchor) and *with other line* (wrong firings
+    within 1 s of another line of the same camera, i.e. one car set off both lines).
+11. **Placement and order check**: on clean trips, median and 10-90% entry time of
+    every zone relative to the anchor, and the order the zones really fire in. A zone
+    out of the configured order by more than `order_tolerance_s` is flagged: either the
+    route in `config.json` is wrong (fix it there) or the zone is not where the user
+    thinks it is (tell them where it really fires, e.g. "E CL1 fires 4 s after B CL1,
+    together with C/D/E B2, not between B CL1 and B B2").
 
 ## How the matching works (so you can explain or adjust it)
 
@@ -102,3 +121,38 @@ out misplaced or noisy zones and anything that changed since earlier logs (compa
 
 After each analysis, append a short dated summary of the key numbers to
 `references/results-history.md`, so the next log can be compared against it.
+
+## Advising on camera settings
+
+The user wants concrete, per-zone advice after every log ("move E Cross-Line-1 closer to
+B Cross-Line-1", "delete F's lines"), aimed at every stage reaching 98%. Give a short
+numbered list of changes for the next recording, each with the number that motivates it
+and what the next log should show if it worked. Collision avoidance is the top priority:
+a zone that adds no information the engine needs but adds false firings should be
+removed, not tuned forever. Heuristics that the logs so far support:
+
+- **Wrong direction comes from turning cars.** Lines where cars drive straight (B, C, D)
+  have 0-3% wrong-direction firings; lines at a turn (A and F at the HuoShih end, E at
+  the GuiLan mouth) fire for 10-25% of opposite-direction cars. Advise moving a line to
+  where the turn is finished (deeper into the lane), across the lane width only (not
+  reaching into the arterial or intersection), perpendicular to the driving direction.
+  *With other line* near 100% means the camera's two lines are crossed by one car at
+  once: they sit too close together or in the turn, so separate them by at least a car
+  length or drop one.
+- **Redundancy before reversal.** A stage with alternatives (A CL1|CL2, C/D CL1) reaches
+  98% because the alternatives back each other up; repurposing one of them can push the
+  stage below target. Check the remaining line's own hit rate in the per-line table.
+- **Box misses**: a box triggers only when a vehicle covers more than 50% of its area, so
+  a box much bigger than a car, or one that cars only clip at its edge, fires rarely
+  (D B1 12-26%). Advise shrinking it to about one car on the path cars actually take.
+  Boxes where cars pass quickly miss more than boxes where they stop.
+- **No-trip firings** above 2% mean the zone catches other traffic or triggers on its
+  own (ghost triggers on B CL2 / D CL1 stopped once lines were set to send once).
+- **Out-of-order zones**: if section 11 shows a zone firing far from where the user's
+  sequence puts it, say where it really is relative to its neighbours before advising
+  a move; fix `config.json` so the matching follows reality.
+- **Small samples**: one miss in 50 trips is 2%. Judge the 98% target only on at least
+  ~100 trips per direction (a full day); say so when a log is shorter.
+- When the user reports a change (zone deleted, moved, reversed), update `config.json`
+  (stages, alternatives) and add a dated `config_history` line before analysing logs
+  recorded after it; use `--drop` for older logs.
