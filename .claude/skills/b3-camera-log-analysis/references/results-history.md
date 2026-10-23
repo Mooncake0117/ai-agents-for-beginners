@@ -79,3 +79,23 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   ~5% chance if nothing had changed). A CL2: 22/22, 1/12 wrong (+4 s after B CL2).
 - All other lines 100% hit, 0% wrong direction, 0% no-trip firings.
 - Timing: S whole route median 11 s (90th 20 s), N 8 s (90th 9 s).
+
+## B3_log_1023.txt: 2026-10-23 11:54-21:38 (same setup as 22-23; chain window now 30 s)
+
+- 22 S / 34 N trips (traffic about a quarter of 10/22). Two northbound cars stopped ~20 s
+  (14:18:36 between C/D B2 and B B2 with no zone firing; 18:54:13 on B CL2 in B B2), so
+  the chain window was raised from 20 to 30 s; with it every N stage is 100%.
+- S: B B0 95% (13:55:03, fast car, A B2 caught it), C/D/E B1 95% (12:48:10); rest 100%.
+- A CL1 22/22 hit, fired for 2 of 34 northbound cars (15:41:33, 18:54:39, both together
+  with A CL2 while the car swung onto the arterial at A B1). A CL2 22/22 hit, 6/29 (21%)
+  wrong direction at +2..+4 s.
+- Box-1 per camera S/N: C 9/26%, D 14/21%, E 86/74%.
+- C B0 last message 15:41, D B0 15:01 (and only 1-13/h before, vs up to 135/h on
+  10/22) while E B0 and C/D lines kept working: check C/D Box-0 (they set x1/x2).
+- Combined 22-23 + 1023 (44 S / 46 N since the 10/22 ~21:00 changes): every stage >= 98%;
+  A CL1 100% hit, 2% wrong (clean trips); A CL2 17% wrong.
+- A B2 vs B B0 over 440 trips (10/21-10/23): never both missed; S A B2 224/224, B B0
+  217/224; N B B0 216/216, A B2 207/216 (all 9 during camera A set-up 10/21 16:35-16:50).
+- Advised: reverse A CL2 (exit check, A CL1 alone covers southbound), keep A B2 and B B0
+  as one zone, check C/D Box-0; the user agreed Box-1 is optional (end S on C/D CL1 + y s,
+  start N at Box-1 or C/D CL2).

@@ -139,14 +139,25 @@ and what the next log should show if it worked. Collision avoidance is the top p
 a zone that adds no information the engine needs but adds false firings should be
 removed, not tuned forever. Heuristics that the logs so far support:
 
-- **Wrong direction comes from turning cars.** Lines where cars drive straight (B, C, D)
-  have 0-3% wrong-direction firings; lines at a turn (A and F at the HuoShih end, E at
-  the GuiLan mouth) fire for 10-25% of opposite-direction cars. Advise moving a line to
-  where the turn is finished (deeper into the lane), across the lane width only (not
-  reaching into the arterial or intersection), perpendicular to the driving direction.
-  *With other line* near 100% means the camera's two lines are crossed by one car at
-  once: they sit too close together or in the turn, so separate them by at least a car
-  length or drop one.
+- **Wrong direction has two causes.** Lines where cars drive straight (B, C, D) have
+  0-3% wrong-direction firings. Far from the camera the bounding box jitters (F's lines,
+  set at long focal distance, deleted 10/22). Close to the camera, a car swinging
+  through a turn moves its box sideways: A's lines fire for 2-21% of northbound cars as
+  they swing onto the arterial in A Box-1 (+2..+4 s after B CL2), and E's lines at the
+  GuiLan mouth did the same. Ask the user where in the picture the swing happens before
+  advising a move; typical fixes are moving the line to where the turn is finished, or
+  ending it short of the swing, across the lane width only and perpendicular to travel.
+  Do not assume two cameras' lines behave alike; the user knows the views. *With other
+  line* near 100% means the camera's two lines are crossed by one car at once: they sit
+  too close together or in the turn, so separate them by at least a car length or drop
+  one.
+- **Lines judge movement, not which way a car faces.** A car reversing out of the lane
+  fires the line set for the opposite direction, exactly like a car driving out. The
+  analysis cannot tell them apart; the live controller does it by where each car is.
+- **Two cameras on one spot.** A Box-2 and B Box-0 cover the same place (entries within
+  0-2 s). Over 440 trips (10/21-10/23) they never missed together: B Box-0 misses fast
+  southbound cars, A Box-2 was lost only while camera A was being set up. Treat them as
+  one zone with two sensors rather than deleting one.
 - **Redundancy before reversal.** A stage with alternatives (A CL1|CL2, C/D CL1) reaches
   98% because the alternatives back each other up; repurposing one of them can push the
   stage below target. Check the remaining line's own hit rate in the per-line table.
