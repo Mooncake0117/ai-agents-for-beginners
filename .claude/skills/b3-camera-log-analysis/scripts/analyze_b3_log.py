@@ -198,6 +198,17 @@ class Analyser:
             dirs = [d for d, h in hits.items() if h]
             if len(dirs) == 1:
                 d = dirs[0]
+                # cars following each other through B without a gap form one episode;
+                # each crossing of the direction's reference line is one car
+                marks = bursts([t for t, z in ep if z in self.routes[d]["reference_lines"]],
+                               self.p["run_gap_s"])
+                if len(marks) > 1:
+                    parts = [[] for _ in marks]
+                    for t, z in ep:
+                        i = min(range(len(marks)), key=lambda i: max(marks[i][0] - t, t - marks[i][1], 0))
+                        parts[i].append((t, z))
+                    trips += [{"dir": d, "start": p[0][0], "end": p[-1][0], "episode": p} for p in parts]
+                    continue
             elif len(dirs) > 1:
                 d = "+".join(sorted(dirs))            # two cars passing / ambiguous
             else:
@@ -234,7 +245,7 @@ class Analyser:
         starts, ends, runs = self.stage_runs(d, j)
         return [tuple(r) for r in runs[bisect.bisect_left(ends, a):bisect.bisect_right(starts, b)]]
 
-    def chain(self, d, k, t0):
+    def chain(self, d, k, t0, taken=()):
         """Best match of route d around stage k seen at t0.
 
         Every burst of every stage near the anchor is a candidate.  A chain
@@ -245,7 +256,8 @@ class Analyser:
         (ties: smallest total gaps), so one stray trigger cannot derail the
         rest of the trip.  A burst that began before the car could have got
         there (another car was already in the zone) counts as a detection
-        but is marked shared and left out of the timing.
+        but is marked shared and left out of the timing.  Bursts listed in
+        `taken` as (stage, start) belong to another car and are skipped.
         Returns per stage: entry time, burst end and shared flag, or None."""
         stages = self.routes[d]["stages"]
         n, W = len(stages), self.p["chain_window_s"]
@@ -260,9 +272,12 @@ class Analyser:
         def best_side(order, lo, hi, forward):
             states = [(k, anchor, 1, 0, -1)]            # stage, burst, matched, gap sum, back
             for j in order:
+                before = states[:]              # a stage follows earlier stages, never itself
                 for c in self.candidates(d, j, lo, hi):
+                    if (j, c[0]) in taken:
+                        continue
                     best = None
-                    for si, (_, pc, cnt, gs, _) in enumerate(states):
+                    for si, (_, pc, cnt, gs, _) in enumerate(before):
                         if fits(pc, c) if forward else fits(c, pc):
                             score = (cnt + 1, -(gs + abs(c[0] - pc[0])))
                             if best is None or score > best[0]:
@@ -288,6 +303,20 @@ class Analyser:
                 limit = first[i] - tol if j > k else first[i] - W
                 shared[j] = first[j] < limit
         return {"first": first, "end": end, "shared": shared}
+
+    def chain_cars(self, d, anchors):
+        """chain() for every (stage, time) anchor of direction d, car by car in time
+        order.  Cars cannot overtake in the lane and a cross-line sends one message per
+        car, so a line burst matched to one car is not offered to the next: otherwise a
+        car in a convoy takes the crossing of the car in front and hides its own miss."""
+        lines_only = {j for j, st in enumerate(self.routes[d]["stages"])
+                      if all(z.startswith("CL") for _, z in st["alts"])}
+        taken, out = set(), [None] * len(anchors)
+        for i in sorted(range(len(anchors)), key=lambda i: anchors[i][1]):
+            ch = self.chain(d, *anchors[i], taken)
+            taken.update((j, ch["first"][j]) for j in lines_only if ch["first"][j] is not None)
+            out[i] = ch
+        return out
 
     def primary(self, trip):
         r = self.routes[trip["dir"]]
@@ -546,9 +575,12 @@ class Analyser:
         trips = self.find_trips()
         good = [tr for tr in trips if tr["dir"] in self.routes]
         for tr in good:
-            k, t0 = self.primary(tr)
-            tr["k"], tr["t0"] = k, t0
-            tr["chain"] = self.chain(tr["dir"], k, t0) if k is not None else None
+            tr["k"], tr["t0"] = self.primary(tr)
+            tr["chain"] = None
+        for d in self.routes:
+            cars = [tr for tr in good if tr["dir"] == d and tr["k"] is not None]
+            for tr, ch in zip(cars, self.chain_cars(d, [(tr["k"], tr["t0"]) for tr in cars])):
+                tr["chain"] = ch
         good = [tr for tr in good if tr["chain"]]
         dc = Counter(tr["dir"] for tr in trips)
         lines.append("\n## 2. Trips through the connecting lane (reference camera "
@@ -677,12 +709,12 @@ class Analyser:
             results = {}
             for k in cand:
                 ref_only = all(c == self.ref for c, _ in stages[k]["alts"])
-                runs = []
+                anchors = []
                 for tr in dtrips:
                     t0 = self.episode_first(tr, stages[k]["alts"]) if ref_only else tr["chain"]["first"][k]
                     if t0 is not None:
-                        runs.append(self.chain(d, k, t0))
-                results[k] = runs
+                        anchors.append((k, t0))
+                results[k] = self.chain_cars(d, anchors)
             header = ["Stage"] + [f"anchor {stages[k]['label']}" for k in cand]
             rows = [["trips"] + [len(results[k]) for k in cand]]
             for j, st in enumerate(stages):

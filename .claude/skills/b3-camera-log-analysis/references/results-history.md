@@ -57,3 +57,25 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - Advised: delete F's lines (keep F boxes); keep A CL2 southbound rather than reversing
   it, use B B0 -> A B2 -> A B1 as the northbound exit check; move A CL1 deeper into the
   lane; delete E's lines; shrink D B1 (and C/E B1); record a full day next.
+- **Correction (10/23, matcher fix: convoys split into one trip per car, each stage
+  matched once per car, line crossings not shared between cars)**: 50 S / 46 N trips;
+  A CL1 100% (not 94%) with 22% wrong direction, A CL2 100% with 9%; C CL1 / D CL1 100%
+  with 0% wrong; B B0 S 94% (misses 13:35:23, 13:44:59, 14:12:41). Same re-run of
+  10/21-22 (without E/F lines): 130 S / 124 N; A CL1 98% (12% wrong), A CL2 98% (5%),
+  C CL1 97%, D CL1 98%; Box-1 per camera S/N: C 52/40%, D 14/20%, E 57/60%.
+
+## B3_log_22-23.txt: 2026-10-22 21:56 to 2026-10-23 11:47 (after the 10/22 ~21:00 changes)
+
+- Changes: F and E cross-lines deleted, C Box-1 and D Box-1 shrunk, A CL1 moved half a
+  car length toward the lane (just past A CL2).
+- Only 22 S / 12 N trips (one miss = 4.5% / 8.3%): far less traffic than 10/22 (08:00
+  hour: 5 trips vs 39) on every camera incl. A/F arterial boxes; B/C/D/E silent
+  22:13-07:53 and 08:36-09:41 with no A turn-ins either, so an empty lane, not an outage.
+- Every stage 100% except C/D/E B1: S 95% (miss 10-23 11:28:33: C B2 and C/D CL1 fired,
+  no Box-1 at all), N 92% (miss 10-22 22:12:51: trip started at C/D CL2).
+- Box-1 per camera after shrinking, S/N: C 32/33% (was 60/41), D 27/25% (was 10/24),
+  E 41/33%; the three now barely overlap (sum ~100%), so a car between them is missed.
+- A CL1 at its new place: 22/22 hit, 0/12 wrong direction (22% on 10/22; 0 of 12 has
+  ~5% chance if nothing had changed). A CL2: 22/22, 1/12 wrong (+4 s after B CL2).
+- All other lines 100% hit, 0% wrong direction, 0% no-trip firings.
+- Timing: S whole route median 11 s (90th 20 s), N 8 s (90th 9 s).

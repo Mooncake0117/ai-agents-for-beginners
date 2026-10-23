@@ -108,6 +108,14 @@ Then read the Markdown report (it is a few hundred lines) and answer from it.
   so one stray trigger cannot derail the rest of the trip.
 - A burst that began before the car could have arrived (another car was already in the
   zone) counts as a detection but is marked shared and excluded from timing.
+- Cars following each other through B without a 3 s gap form one B episode; it is
+  split into one trip per crossing of B's reference line (one message per car since
+  10/21). Cars are then matched in time order and a cross-line burst used by one car is
+  not offered to the next (cars cannot overtake in the lane), so a convoy cannot hide a
+  miss by sharing the car in front's crossing. Boxes may still be shared.
+- Before 10/23 the matcher could count one stage twice (e.g. this car's B B2 and the
+  next car's), which pulled a convoy car's chain onto the following car: per-line rates
+  reported before then (10/22: "A CL1 94%") were too low; re-run old logs if comparing.
 - All thresholds are in `config.json` → `params`.
 
 ## Reporting back
@@ -145,7 +153,11 @@ removed, not tuned forever. Heuristics that the logs so far support:
 - **Box misses**: a box triggers only when a vehicle covers more than 50% of its area, so
   a box much bigger than a car, or one that cars only clip at its edge, fires rarely
   (D B1 12-26%). Advise shrinking it to about one car on the path cars actually take.
-  Boxes where cars pass quickly miss more than boxes where they stop.
+  Boxes where cars pass quickly miss more than boxes where they stop. Boxes that are
+  alternatives of one stage (C/D/E Box-1) each watch a different exit path, so judge the
+  stage, not each box: if the per-camera rates add up to about 100% they no longer
+  overlap, and shrinking one opens a gap where a car is missed (10/23 after C/D Box-1
+  were shrunk). Check the video at a stage miss to see which path the car took.
 - **No-trip firings** above 2% mean the zone catches other traffic or triggers on its
   own (ghost triggers on B CL2 / D CL1 stopped once lines were set to send once).
 - **Out-of-order zones**: if section 11 shows a zone firing far from where the user's
