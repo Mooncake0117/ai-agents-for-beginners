@@ -1,0 +1,146 @@
+{
+  "_comment": "Camera setup from 2026-10-22 ~21:00 to 2026-10-24 03:13 (A Cross-Line-2 still southbound). Use with --config for logs recorded in that period; config.json holds the current setup.",
+  "reference_camera": "B",
+  "cameras": {
+    "A": "192.168.7.164",
+    "B": "192.168.7.165",
+    "C": "192.168.7.162",
+    "D": "192.168.7.167",
+    "E": "192.168.7.163",
+    "F": "192.168.7.166"
+  },
+  "directions": {
+    "S": {
+      "name": "Southbound (HuoShih -> GuiLan)",
+      "reference_lines": [
+        "CL1"
+      ],
+      "reference_box_order": [
+        "B0",
+        "B2"
+      ],
+      "primary_anchors": [
+        "B:CL1",
+        "B:B1",
+        "B:B0",
+        "B:B2"
+      ],
+      "stages": [
+        [
+          "F:B0"
+        ],
+        [
+          "A:B1"
+        ],
+        [
+          "A:CL1",
+          "A:CL2",
+          "A:CL"
+        ],
+        [
+          "A:B2"
+        ],
+        [
+          "B:B0"
+        ],
+        [
+          "B:B1"
+        ],
+        [
+          "B:CL1"
+        ],
+        [
+          "B:B2"
+        ],
+        [
+          "C:B2",
+          "D:B2",
+          "E:B2"
+        ],
+        [
+          "C:CL1",
+          "D:CL1"
+        ],
+        [
+          "C:B1",
+          "D:B1",
+          "E:B1"
+        ]
+      ]
+    },
+    "N": {
+      "name": "Northbound (GuiLan -> HuoShih)",
+      "reference_lines": [
+        "CL2"
+      ],
+      "reference_box_order": [
+        "B2",
+        "B0"
+      ],
+      "primary_anchors": [
+        "B:CL2",
+        "B:B1",
+        "B:B2",
+        "B:B0"
+      ],
+      "stages": [
+        [
+          "C:B1",
+          "D:B1",
+          "E:B1"
+        ],
+        [
+          "C:CL2",
+          "D:CL2"
+        ],
+        [
+          "C:B2",
+          "D:B2",
+          "E:B2"
+        ],
+        [
+          "B:B2"
+        ],
+        [
+          "B:CL2"
+        ],
+        [
+          "B:B1"
+        ],
+        [
+          "B:B0"
+        ],
+        [
+          "A:B2"
+        ],
+        [
+          "A:B1"
+        ]
+      ]
+    }
+  },
+  "params": {
+    "episode_gap_s": 3,
+    "chain_window_s": 30,
+    "chain_span_s": 90,
+    "order_tolerance_s": 3,
+    "run_gap_s": 2,
+    "run_cap_s": 180,
+    "outage_streak": 3,
+    "attribution_margin_s": 2,
+    "anchor_min_rate_pct": 95,
+    "silence_report_min": 30,
+    "target_pct": 98,
+    "clean_window_s": 20,
+    "placement_window_s": 20
+  },
+  "config_history": [
+    "2026-10-19 ~16:30  vendor re-tuned C/D cross-lines (before that they missed often and stopped at 16:14-17:08)",
+    "2026-10-19 later   IP-CAM-F changed to Box-0, Box-1 (north branch), Cross-Line-1/2 (lane exit to HuoShih); old F Box-2 dropped",
+    "2026-10-21         cameras now send 1 message per line crossing and at most 1 message per second per occupied box (vendor alarm interval)",
+    "2026-10-21 ~17:45  IP-CAM-E cross-lines moved next to the connecting lane: E CL1 southbound (after B CL1), E CL2 northbound (after B B2); for older logs use --drop E:CL1 --drop E:CL2",
+    "2026-10-22 route order corrected from measured positions (section 11): E CL1 fires at the GuiLan exit, after B B2 and C/D/E B2, just before C/D CL1; E CL2 fires just before B B2",
+    "2026-10-22 ~21:00  F's and E's cross-lines deleted; C Box-1 and D Box-1 shrunk; A Cross-Line-1 moved about half a car length toward the lane (now just past A Cross-Line-2, both southbound). Older logs are analysed without the E/F lines unless they are added back to the stages",
+    "2026-10-23 analysis: chain_window_s 20 -> 30 (cars stop up to ~22 s between zones, e.g. 10/23 14:18 between C/D B2 and B B2)"
+  ]
+}

@@ -34,6 +34,10 @@ python .claude/skills/b3-camera-log-analysis/scripts/analyze_b3_log.py \
   `--drop CAM:ZONE` (repeatable), e.g. `--drop E:CL1 --drop E:CL2` for logs before
   IP-CAM-E's lines were moved next to the lane. Otherwise a zone that sat elsewhere
   looks like a broken detector, and can steal matches from its neighbours.
+- When a change moves a zone between directions (10/24 03:13: A Cross-Line-2 reversed
+  into a northbound exit check), save the old setup as `config-until-<date>.json` and
+  analyse logs from before the change with `--config` pointing at it.
+  `config-until-2026-10-24-0313.json` covers 10/22 ~21:00 to 10/24 03:13.
 - If the user describes a new camera change, update `config.json` (stage order or
   alternatives) and add a dated `config_history` line. The script itself should not
   need edits for configuration changes.

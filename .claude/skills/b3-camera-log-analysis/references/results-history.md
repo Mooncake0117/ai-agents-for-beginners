@@ -99,3 +99,14 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - Advised: reverse A CL2 (exit check, A CL1 alone covers southbound), keep A B2 and B B0
   as one zone, check C/D Box-0; the user agreed Box-1 is optional (end S on C/D CL1 + y s,
   start N at Box-1 or C/D CL2).
+
+## B3_log_23-24.txt: 2026-10-23 22:04 to 2026-10-24 01:28 (quiet hours, before A CL2 reversal)
+
+- 3 S / 3 N trips. All stages fired except B B0 for one fast southbound car (22:56:55;
+  A B2 caught it; B B0 has now missed 8 of 227 southbound cars, A B2 none).
+- 22:26:04: a car came from F B0, nosed into the mouth (A B1 + A B2 repeating for 9 s,
+  no A CL1, no B), went back to F B0 and on to A B0: a real turn-in-and-back-out.
+- 23:03:19-39: a northbound car waited ~20 s in E B0/E B1 before entering (C/D CL2).
+- C/D Box-0 checked by the user on site: working (10/23 evening was just quiet).
+- A CL2 reversed 10/24 03:13; config.json updated, old setup kept in
+  config-until-2026-10-24-0313.json.
