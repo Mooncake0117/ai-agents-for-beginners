@@ -94,9 +94,11 @@ lane, every zone on its route that should have fired and did not counts a
 miss; suspect_misses (3) in a row make the zone suspect, recover_hits (2) hits
 in a row clear it.  Suspects are shown, not acted on, unless the southbound
 entry cannot be seen at all (camera A and camera B both offline or suspect), the
-HTTP server is down, or no camera has sent anything for silent_alarm_min in the
-daytime (the silence counts from the end of the quiet hours at the earliest): then the lights count down to all red and run the fixed V22 cycle until
-it is safe again, returning to smart control after the all-red CLEARANCE_1.
+HTTP server is down, or no camera has sent anything for silent_alarm_min (60)
+outside the quiet hours (23:00-08:00; the silence counts from 08:00 at the
+earliest, and once the alarm is on only a camera message ends it): then the
+lights count down to all red and run the fixed V22 cycle until it is safe
+again, returning to smart control after the all-red CLEARANCE_1.
 """
 
 from __future__ import annotations
@@ -239,9 +241,9 @@ class Settings:
 
     suspect_misses: int = _f(3, "Zone suspect after misses in a row", "Cameras", 1, 20)
     recover_hits: int = _f(2, "Suspect zone clears after hits in a row", "Cameras", 1, 20)
-    silent_alarm_min: int = _f(45, "Fixed cycle if no camera sends anything for (min, daytime)", "Cameras", 1, 240)
+    silent_alarm_min: int = _f(60, "Fixed cycle if no camera sends anything for (min, daytime)", "Cameras", 1, 240)
     quiet_from: int = _f(23, "Quiet hours from (hour, no silence alarm)", "Cameras", 0, 23)
-    quiet_to: int = _f(7, "Quiet hours to (hour)", "Cameras", 0, 23)
+    quiet_to: int = _f(8, "Quiet hours to (hour)", "Cameras", 0, 23)
 
     clearance_1: int = _f(8, "Fixed cycle: CLEARANCE_1, all red (s)", "Fixed cycle (V22)", 1, 60)
     traffic: int = _f(15, "Fixed cycle: TRAFFIC (s)", "Fixed cycle (V22)", 1, 90)
@@ -1073,6 +1075,7 @@ class Engine:
         self.forced_fixed = False               # operator chose the fixed cycle
         self.last_demand = (False, False)       # (southbound, northbound) at the last packet
         self.fixed_reason = ""
+        self.silent_from = None                 # last message before the silence alarm fired
 
     # ------------------------------------------------------------ input
     def message(self, t, cam, zone):
@@ -1140,8 +1143,10 @@ class Engine:
         if s.quiet_from != s.quiet_to:                  # only count the silence since the quiet hours ended
             day = wall.replace(hour=s.quiet_to, minute=0, second=0, microsecond=0)
             silent = min(silent, (wall - day).total_seconds() % 86400)
-        if not quiet and silent >= s.silent_alarm_min * 60:
+        if (not quiet and silent >= s.silent_alarm_min * 60) or self.silent_from == last:
+            self.silent_from = last                     # quiet hours do not end it: only a message
             return f"no camera has sent anything for {s.silent_alarm_min} min"
+        self.silent_from = None
         return ""
 
     # ----------------------------------------------------------- output

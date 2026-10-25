@@ -134,3 +134,14 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - All six cameras silent 10-25 06:41-07:48 (Sunday morning, no traffic).
 - Smart engine replay (10/24 and 24-25): every trip found, 0 unsafe once the second
   GuiLan camera's report of one C/D CL1 crossing goes to the car that has just crossed.
+
+## B3_log_1025.txt: 2026-10-25 18:45-23:25 (Sunday evening, same setup)
+
+- 5 S / 7 N trips, all clean: every stage 100% both ways, no wrong-direction or no-trip
+  line firings. Box-1 per camera S/N: C 40/14%, D 20/29%, E 100/100%.
+- D B0 sent nothing all evening (C B0 11, E B0 21 messages); D B0 has been sporadic
+  since 10/24 afternoon, so watch it (C/D Box-0 only choose the 3 s / 2 s countdown).
+- All cameras silent 20:58-21:29 (31 min); B-E 20:51-22:40 while A/F kept reporting.
+- Smart engine replay: every trip found, 0 unsafe; 3 one-message A B1 clips right after
+  F B0 started a 2 s countdown each (cars passing on the HuoShih arterial).
+- Silence alarm now 60 min, quiet hours 23:00-08:00.
