@@ -28,6 +28,8 @@ The lane as a row of spots, HuoShih end to GuiLan end
     spot 7  C/D/E Box-2             GuiLan mouth
     spot 8  C/D Cross-Line-1 / -2   GuiLan entry line: CL1 out (south), CL2 in (north)
     spot 9  C/D/E Box-1             GuiLan intersection          (outside)
+The HuoShih mouth (spots 1-3) is one car wide; from B Box-1 to the GuiLan end
+(spots 4-8) the lane is two-way and cars going opposite ways pass each other.
 A Box-0 (HuoShih arterial before 0x00) and C/D Box-0 (GuiLan arterial) only
 choose the countdown length; F Box-1 (north branch) means a car at F Box-0
 turned right.  Every message is timed by this PC when it arrives; anything the
@@ -40,25 +42,35 @@ confidence score:
     box just behind it that a long car still covers; never past another car
     that still sits in a box between them (cars cannot overtake).  A
     cross-line sends one message per car, so a line one car has crossed is
-    crossed next by the car behind it (C and D both report the GuiLan line).
-  * Southbound: F Box-0 makes a candidate (10%), A Box-1 adds to it (or makes
-    one).  A Box-2 after A Box-1 makes it a southbound car (50%) and starts the
-    0x02/0x03 countdown, x1 = 5 s if C/D Box-0 saw a car in the last 2 s, else
-    x2 = 3 s (setting south_start: or already at A Box-1 after F Box-0).  A
-    Cross-Line-1, B Cross-Line-1 or any later spot does the same for a car whose
-    start was missed.  A car seen only at the mouth (never past A Cross-Line-1
-    or at B Box-1) is dropped candidate_s after its last message: it nosed in.  C/D Cross-Line-1 = leaving; the car's
-    event ends at the next C/D/E Box-1 or y s later, and 0x02/0x03 turn green y s
-    after the last southbound car has ended.  A C/D/E Box-1 before the car has
-    crossed C/D Cross-Line-1 does not end it: the car may still wait at the mouth.
+    crossed next by the car behind it.  C and D both report the GuiLan line:
+    the second camera's report within 2 s belongs to the car that has just
+    crossed (even if that car has already left), not to the car behind it.
+    A box beyond the one in front of a car (one missed) goes to the car that
+    has just left through there before it goes to the car behind.  Only a car
+    going the same way, or any car in the HuoShih mouth, stands in the way;
+    opposite cars pass each other in the two-way part.
+  * Southbound: F Box-0 makes a candidate (10%).  A Box-1 after it makes it a
+    southbound car (50%) and starts the 0x02/0x03 countdown at once, x1 = 3 s
+    if C/D Box-0 saw a car in the last 2 s, else x2 = 2 s (setting south_start:
+    or only at A Box-2 after A Box-1).  Without F Box-0 (a car that waited at
+    the mouth, or F Box-0 missed), A Box-2 after A Box-1, A Cross-Line-1, B
+    Cross-Line-1 or any later spot does the same.  A car seen only at the
+    mouth (never past A Cross-Line-1 or at B Box-1) is dropped candidate_s
+    after its last message: it nosed in.  0x02/0x03 turn green y s after the
+    last southbound car has left.
   * Northbound: C/D/E Box-1 makes a candidate (5%).  C/D Cross-Line-2 (or B
     Cross-Line-2, or any spot from B Box-2 on) makes it a northbound car and
-    starts the 0x00 countdown, z1 = 5 s if A Box-0 saw a car in the last 1 s,
-    else z2 = 3 s; then 0x00 red, w s later 0x01 green.  A Cross-Line-2 (now
-    set right to left) = left the lane; A Box-1 = leaving, and the car has left
-    once its boxes in the lane stay quiet.  Then 0x01 counts down u s, turns
-    red, and 0x00 turns green v s later, unless another northbound car is in
-    the lane.
+    starts the 0x00 countdown, z1 = 3 s if A Box-0 saw a car in the last 1 s,
+    else z2 = 2 s; then 0x00 red, w s later 0x01 green.  When the last
+    northbound car has left, 0x01 counts down u s, turns red, and 0x00 turns
+    green v s later.
+  * The end of a trip, the same both ways: the car has left once it has crossed
+    its exit line (C/D Cross-Line-1 / A Cross-Line-2) and reached its last box
+    (C/D/E Box-1 / A Box-1), in either order; if the box never comes, gone_s
+    (3 s) after the line.  A northbound car at A Box-1 whose A Cross-Line-2 is
+    missed has left once its boxes in the lane stay quiet for gone_s.  A
+    southbound car at C/D/E Box-1 has not left before C/D Cross-Line-1: it may
+    still wait at the mouth.
   * Standing still is not leaving: while a car's box keeps reporting (once a
     second), its score holds and the lights stay.  A car that goes silent keeps
     its score hold_s (5 s), then fades to cut_pct (15%) by fade_to_s (25 s) and
@@ -83,7 +95,7 @@ miss; suspect_misses (3) in a row make the zone suspect, recover_hits (2) hits
 in a row clear it.  Suspects are shown, not acted on, unless the southbound
 entry cannot be seen at all (camera A and camera B both offline or suspect), the
 HTTP server is down, or no camera has sent anything for silent_alarm_min in the
-daytime: then the lights count down to all red and run the fixed V22 cycle until
+daytime (the silence counts from the end of the quiet hours at the earliest): then the lights count down to all red and run the fixed V22 cycle until
 it is safe again, returning to smart control after the all-red CLEARANCE_1.
 """
 
@@ -108,6 +120,12 @@ S, N = "S", "N"                     # southbound (HuoShih -> GuiLan), northbound
 SIGN = {S: 1, N: -1}                # spot numbers grow southbound
 OUTSIDE = {S: 1, N: 9}              # S is outside the lane at spot <= 1, N at spot >= 9
 EXIT_LINE = {S: 8, N: 2}            # crossing it in the car's direction = out of the lane
+EXIT_LINE_NAME = {S: "C/D Cross-Line-1", N: "A Cross-Line-2"}
+OUTER_BOX = {S: 9, N: 1}            # the car's last box, just outside the lane
+OUTER_BOX_NAME = {S: "C/D/E Box-1", N: "A Box-1"}
+END_NAME = {S: "GuiLan", N: "HuoShih"}
+TWO_WAY = range(4, 9)               # B Box-1 .. C/D lines: wide, opposite cars pass each other;
+                                    # the HuoShih mouth (A Box-1 .. A Box-2/B Box-0) is one car wide
 NAME = {S: "southbound", N: "northbound"}
 
 SPOT = {
@@ -150,7 +168,7 @@ RETREAT_S = 3.0         # front box quiet this long while a box behind keeps rep
 MULTI_CAMERA_S = 2.0    # C and D report one GuiLan crossing within this
 ORPHAN_S = 6.0          # a car first seen on a line adopts unexplained boxes this recent
 COLORS = ("green", "red")
-SOUTH_STARTS = ("A Box-2", "A Box-1")
+SOUTH_STARTS = ("A Box-1", "A Box-2")
 
 
 def zone_name(zone):
@@ -189,22 +207,25 @@ def _f(default, label_, group, lo=0, hi=99, choices=None):
 @dataclass
 class Settings:
     """Every value the operator can change on screen."""
-    x1: int = _f(5, "0x02/0x03 countdown, car on GuiLan arterial (x1)", "Lights", 0, 30)
-    x2: int = _f(3, "0x02/0x03 countdown, GuiLan arterial empty (x2)", "Lights", 0, 30)
+    x1: int = _f(3, "0x02/0x03 countdown, car on GuiLan arterial (x1)", "Lights", 0, 30)
+    x2: int = _f(2, "0x02/0x03 countdown, GuiLan arterial empty (x2)", "Lights", 0, 30)
     x_window: float = _f(2.0, "GuiLan arterial counts if C/D Box-0 seen within (s)", "Lights", 0, 10)
     y: int = _f(3, "0x02/0x03 red after the last southbound car left (y)", "Lights", 0, 30)
-    z1: int = _f(5, "0x00 countdown, car on HuoShih arterial (z1)", "Lights", 0, 30)
-    z2: int = _f(3, "0x00 countdown, HuoShih arterial empty (z2)", "Lights", 0, 30)
+    z1: int = _f(3, "0x00 countdown, car on HuoShih arterial (z1)", "Lights", 0, 30)
+    z2: int = _f(2, "0x00 countdown, HuoShih arterial empty (z2)", "Lights", 0, 30)
     z_window: float = _f(1.0, "HuoShih arterial counts if A Box-0 seen within (s)", "Lights", 0, 10)
     w: int = _f(2, "0x00 red -> 0x01 green (w)", "Lights", 0, 30)
     u: int = _f(2, "0x01 green countdown after the last northbound car left (u)", "Lights", 0, 30)
     v: int = _f(0, "0x01 red -> 0x00 green (v)", "Lights", 0, 30)
-    south_start: str = _f("A Box-2", "Southbound countdown starts at A Box-2 (after A Box-1) or A Box-1",
-                          "Lights", choices=("A Box-2", "A Box-1"))
+    south_start: str = _f("A Box-1", "Southbound countdown starts at A Box-1 (after F Box-0) or A Box-2",
+                          "Lights", choices=("A Box-1", "A Box-2"))
     max_red: int = _f(60, "A car that does not move holds the lights at most (s)", "Lights", 10, 600)
     blank_number: int = _f(0, "Number byte for a plain colour (0 = no digits)", "Lights", 0, 255)
 
-    candidate_s: float = _f(3.0, "Candidate outside the lane dropped after silence (s)", "Confidence", 1, 30)
+    candidate_s: float = _f(3.0, "Car seen only outside the lane or at the mouth: dropped after silence (s)",
+                            "Confidence", 1, 30)
+    gone_s: float = _f(3.0, "Exit line crossed but no C/D/E Box-1 / A Box-1 follows: car ends after (s)",
+                       "Confidence", 0, 30)
     hold_s: float = _f(5.0, "Silent car in the lane keeps its score for (s)", "Confidence", 0, 60)
     fade_to_s: float = _f(25.0, "... and fades to the cut-off by (s)", "Confidence", 1, 300)
     cut_pct: float = _f(15.0, "Cut-off: a car below this no longer counts (%)", "Confidence", 0, 100)
@@ -301,7 +322,8 @@ class Vehicle:
     state: str = "candidate"   # candidate | active | leaving | ended | cancelled
     score: float = 0.0
     active_since: float | None = None
-    exit_time: float | None = None
+    exit_time: float | None = None   # crossed its exit line (C/D Cross-Line-1 / A Cross-Line-2)
+    outer_time: float | None = None  # reached its last box (C/D/E Box-1 / A Box-1)
     end_time: float | None = None
     end_reason: str = ""
     entered: bool = False      # has held the lights at some time
@@ -387,13 +409,16 @@ class Tracker:
         return any(t - last <= self.s.occupied_s for last in v.zones.values())
 
     def _blocked(self, v, spot, t):
-        """Another car still sitting in a box between v and spot."""
+        """Another car still sitting in a box between v and spot: a car going the
+        same way (no overtaking), or any car in the one-car-wide HuoShih mouth.
+        Cars going opposite ways pass each other from B Box-1 to the GuiLan end."""
         lo, hi = sorted((v.front, spot))
         return any(u is not v and u.live and lo < u.front < hi and self._occupied(u, t)
+                   and (u.direction == v.direction or u.front not in TWO_WAY)
                    for u in self.vehicles)
 
     def _box(self, t, key, spot):
-        best, best_rank = None, None
+        best, best_rank, linger = None, None, None
         for v in self.vehicles:
             if spot == 0 and v.direction == N:
                 continue                                # F Box-0 is past a northbound car's exit
@@ -415,8 +440,12 @@ class Tracker:
                     rank = (2, -v.seen)                 # the box just behind, car straddles both
                 else:
                     continue
+            if rank[0] == 3 and (linger is None or rank < linger[1]):
+                linger = (v, rank)
             if best_rank is None or rank < best_rank:
                 best, best_rank = v, rank
+        if linger and best_rank[0] == 1 and best_rank[2] == 2:
+            best = linger[0]                            # not a jump over a box: the car that just left
         if best is not None:
             self._attach(best, t, key, spot, None)
             return
@@ -434,12 +463,18 @@ class Tracker:
         cam = key[0]
         best, best_rank = None, None
         for v in self.vehicles:
-            if not v.live or v.direction != move:
+            if v.direction != move:
                 continue
             prev = v.crossed.get(spot)
+            # the other GuiLan camera reporting the crossing of a car that just went
+            # over (and may have ended on it): that car, before any car behind it
+            same_crossing = (prev is not None and spot in MULTI_CAMERA_LINES
+                             and prev[1] != cam and key not in v.visited
+                             and t - prev[0] <= MULTI_CAMERA_S)
+            if not v.live and not (same_crossing and v.state == "ended"
+                                   and t - v.end_time <= LINGER_S):
+                continue
             if prev is not None:
-                same_crossing = (spot in MULTI_CAMERA_LINES and prev[1] != cam
-                                 and t - prev[0] <= MULTI_CAMERA_S)
                 if not same_crossing:
                     continue                            # crossed already: the next car
                 rank = (0, v.vid)
@@ -553,17 +588,23 @@ class Tracker:
             self._activate(v, t, key)
         if v.state not in ("active", "leaving"):
             return
-        if v.direction == S:
-            if move == S and spot == 8 and v.state == "active":
-                v.state, v.exit_time = "leaving", t
-                self.e.event(f"{self._name(v)} leaving the lane at GuiLan ({label(key)})", "EVENT")
-            elif move is None and spot == 9 and v.state == "leaving":
-                self.finish(v, t, "ended", "left at GuiLan")
-        elif move == N and spot == 2:
-            self.finish(v, t, "ended", "left at HuoShih (A Cross-Line-2)")
-        elif move is None and spot == 1 and v.state == "active":
-            v.state, v.exit_time = "leaving", t
-            self.e.event(f"{self._name(v)} leaving the lane at HuoShih ({label(key)})", "EVENT")
+        d = v.direction
+        if move == d and spot == EXIT_LINE[d]:
+            if v.exit_time is None:
+                v.exit_time = t
+        elif move is None and spot == OUTER_BOX[d]:
+            if v.outer_time is None:
+                v.outer_time = t
+        else:
+            return
+        if v.exit_time is not None and v.outer_time is not None:
+            self.finish(v, t, "ended", f"left at {END_NAME[d]} ({EXIT_LINE_NAME[d]} and "
+                                       f"{OUTER_BOX_NAME[d]})")
+        elif v.state == "active" and (v.exit_time is not None or d == N):
+            # a southbound car at C/D/E Box-1 has not left until it crosses C/D
+            # Cross-Line-1: it may still wait at the mouth
+            v.state = "leaving"
+            self.e.event(f"{self._name(v)} leaving the lane at {END_NAME[d]} ({label(key)})", "EVENT")
 
     def _confirms(self, v, key, spot, move):
         if v.direction == S:
@@ -642,14 +683,18 @@ class Tracker:
             else:
                 frac = (quiet - s.hold_s) / (s.fade_to_s - s.hold_s)
                 v.score = s.cut_pct + max(0.0, v.base - s.cut_pct) * (1 - frac * frac)
-            if v.state == "leaving" and v.direction == S and t - v.exit_time >= s.y:
-                self.finish(v, t, "ended", "left at GuiLan")
-                continue
-            if v.state == "leaving" and v.direction == N and not any(
-                    t - last <= s.occupied_s for k, last in v.zones.items()
-                    if not k[1].startswith("CL") and SPOT[k] >= 3):
-                self.finish(v, t, "ended", "left at HuoShih (its lane boxes are quiet)")
-                continue
+            if v.state == "leaving":
+                d = v.direction
+                if v.exit_time is not None and t - v.exit_time >= s.gone_s:
+                    self.finish(v, t, "ended", f"left at {END_NAME[d]} ({EXIT_LINE_NAME[d]}, "
+                                               f"{s.gone_s:g} s without {OUTER_BOX_NAME[d]})")
+                    continue
+                if v.exit_time is None and not any(     # northbound at A Box-1, A Cross-Line-2 missed
+                        t - last < s.gone_s for k, last in v.zones.items()
+                        if not k[1].startswith("CL") and SPOT[k] >= 3):
+                    self.finish(v, t, "ended", f"left at HuoShih (A Box-1, its lane boxes quiet "
+                                               f"{s.gone_s:g} s)")
+                    continue
             if not v.parked and t - v.progress >= s.max_red:
                 v.parked = True
                 self.e.event(f"{self._name(v)} has not moved for {s.max_red} s at {v.where}; "
@@ -1091,7 +1136,11 @@ class Engine:
         quiet = (wall.hour >= s.quiet_from or wall.hour < s.quiet_to) if s.quiet_from > s.quiet_to \
             else s.quiet_from <= wall.hour < s.quiet_to
         last = max(self.last_cam.values(), default=self.started)
-        if not quiet and t - last >= s.silent_alarm_min * 60:
+        silent = t - last
+        if s.quiet_from != s.quiet_to:                  # only count the silence since the quiet hours ended
+            day = wall.replace(hour=s.quiet_to, minute=0, second=0, microsecond=0)
+            silent = min(silent, (wall - day).total_seconds() % 86400)
+        if not quiet and silent >= s.silent_alarm_min * 60:
             return f"no camera has sent anything for {s.silent_alarm_min} min"
         return ""
 

@@ -13,7 +13,9 @@ V22 sends its fixed cycle.
                       55 AA | quantity | (address*8 + colour, number) x 4 | XOR.
                       The lights do not latch, so a packet goes out every
                       second, plus one at once when a car starts or stops
-                      holding the lights.  Number 0 shows no digits.
+                      holding the lights; a countdown that starts then sets the
+                      beat, so each number shows a whole second.  Number 0
+                      shows no digits.
     Fixed cycle       If the southbound entry cannot be seen (cameras A and B
                       both failing), the camera server is down, or no camera
                       has sent anything for a long time in the daytime, the
@@ -363,7 +365,9 @@ class Controller(threading.Thread):
                 item = None
             if item is not None:
                 try:
-                    self._handle(item)
+                    started = self._handle(item)
+                    if started is not None:     # each number of the countdown shows a whole second
+                        next_tick = started + 1.0
                 except Exception:               # noqa: BLE001 - never stop sending
                     self.app.log(traceback.format_exc(), "ERROR")
                 continue
@@ -377,12 +381,17 @@ class Controller(threading.Thread):
                 self._send(extra=True)          # a countdown ends between two seconds
 
     def _handle(self, item):
+        """Process one inbox item; returns the start time of a countdown that this
+        message started (the once-a-second packets then follow that countdown)."""
         kind = item[0]
         if kind == "msg":
             _, (mono, wall), ip, path, body = item
             self._message(mono, wall, ip, path, body)
             if self.engine.demand_changed():
+                counting = self._counting()
                 self._send(extra=True)
+                if self._counting() - counting:
+                    return self.engine.now
         elif kind == "settings":
             self.engine.settings = item[1]
             self.app.log("Settings applied", "INFO", decision=True)
@@ -390,6 +399,13 @@ class Controller(threading.Thread):
             self.engine.forced_fixed = item[1]
             self.app.log("Fixed cycle chosen by the operator" if item[1]
                          else "Smart control chosen by the operator", "WARN", decision=True)
+
+    def _counting(self):
+        lights = self.engine.lights
+        if lights.mode != "smart" or self._failsafe is not None:
+            return set()
+        return {name for name, (st, _) in (("south", lights.south), ("north", lights.north))
+                if st == "count"}
 
     def _message(self, mono, wall, ip, path, body):
         cam = next((c for c, cip in CAMERAS.items() if cip == ip), None)

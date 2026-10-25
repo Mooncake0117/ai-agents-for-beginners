@@ -110,3 +110,27 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - C/D Box-0 checked by the user on site: working (10/23 evening was just quiet).
 - A CL2 reversed 10/24 03:13; config.json updated, old setup kept in
   config-until-2026-10-24-0313.json.
+
+## B3_log_1024.txt: 2026-10-24 06:20-15:08 (A CL2 reversed since 03:13)
+
+- 47 S / 38 N trips. Every northbound stage 100%; reversed A CL2 38/38 hit, 1/40 wrong
+  direction (was 21% before the reversal). C/D CL2 2/40 wrong direction (+17 s).
+- S: B B0 94% (09:09:53, 09:22:10, 10:40:22; A B2 caught all three), B B1 and B B2 98%
+  (09:13:00), C/D/E B1 98% (08:10:18); every other stage 100%. A CL1 2% no-trip firings.
+- Box-1 per camera S/N: C 36/42%, D 11/13%, E 74/66%. C/D/E B2 for S: C 98%, D 68%, E 45%.
+- Northbound blind spot between C/D/E B2 and B B2: one car unseen for 30 s (11:07:42).
+
+## B3_log_24-25.txt: 2026-10-24 15:11 to 2026-10-25 18:21 (B Box-2 widened by the user)
+
+- 44 S / 54 N trips. One southbound car missed by A CL1, A B2, B B0 and B B1 at once
+  (10-25 08:26:51; F B0, A B1 and B CL1 saw it); single misses: A B1 11:21:49, B B2
+  11:23:24, C/D CL1 11:13:53 (C and D both). Every other S stage 100%.
+- N: B B0, A CL2 96% (10-24 19:21:36 when a car stood 40+ s at B B1/B B2 under the V22
+  red, and 22:38:25); A B2, A B1 98%. A CL2 4/39 (10%) wrong direction at -5..-3 s.
+- Box-1 per camera S/N: C 25/28%, D 25/26%, E 93/81%.
+- Blind spot after widening B Box-2: max 19 s (11:43:45; 21:30:32 16 s, 17:45:28 14 s),
+  vs 30 s on 10/24 and 21 s on 10/23. Cars still stop where neither C/D/E B2 nor B B2
+  sees them, but under the controller's 25 s fade no car is lost.
+- All six cameras silent 10-25 06:41-07:48 (Sunday morning, no traffic).
+- Smart engine replay (10/24 and 24-25): every trip found, 0 unsafe once the second
+  GuiLan camera's report of one C/D CL1 crossing goes to the car that has just crossed.
