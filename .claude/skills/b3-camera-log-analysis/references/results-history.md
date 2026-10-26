@@ -145,3 +145,14 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - Smart engine replay: every trip found, 0 unsafe; 3 one-message A B1 clips right after
   F B0 started a 2 s countdown each (cars passing on the HuoShih arterial).
 - Silence alarm now 60 min, quiet hours 23:00-08:00.
+
+## B3_log_2026-10-26.txt: first field-run day of the smart program (02:37-23:43)
+
+- The smart program's own camera log (same format as HTTP_Server.py). 17 S / 17 N trips,
+  all clean; every stage 100% except B B1 southbound 16/17 (20:24:22, fast car). A CL2
+  had no wrong-direction firings (0/17).
+- A and F zones moved ~21:00; F Box-2 added (fires 1-2 s after F B0 or A CL2).
+- Two POSTs from 127.0.0.1 (/api/admin/login, /api/admin/boards: an LED board's admin
+  API) hit port 8000 at 14:50:38; the analyzer now skips non-camera POSTs.
+- Live decisions = replay of the same log (except a 10 s fixed-cycle blip at 04:17:06
+  start-up: the camera server was slow to open its port after a restart; fixed).

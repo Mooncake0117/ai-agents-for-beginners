@@ -94,7 +94,15 @@ def parse_log(path):
     if len(bodies) != len(reqs):
         warnings.append(f"{path}: {len(bodies)} message texts but {len(reqs)} request lines; "
                         f"paired the first {min(len(bodies), len(reqs))} in order")
-    return [(t, cam, z, ip) for (t, cam, ip), z in zip(reqs, bodies)], warnings
+    events, other = [], 0
+    for (t, cam, ip), z in zip(reqs, bodies):
+        if re.fullmatch(r"B\d+|CL\d*", z) and re.fullmatch(r"[A-Za-z0-9]+", cam):
+            events.append((t, cam, z, ip))
+        else:
+            other += 1                      # not a camera trigger (another program's POST)
+    if other:
+        warnings.append(f"{path}: skipped {other} POSTs that are not camera triggers")
+    return events, warnings
 
 
 # ------------------------------------------------------------------ helpers

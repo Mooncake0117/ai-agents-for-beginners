@@ -143,6 +143,7 @@
     "2026-10-22 route order corrected from measured positions (section 11): E CL1 fires at the GuiLan exit, after B B2 and C/D/E B2, just before C/D CL1; E CL2 fires just before B B2",
     "2026-10-22 ~21:00  F's and E's cross-lines deleted; C Box-1 and D Box-1 shrunk; A Cross-Line-1 moved about half a car length toward the lane (now just past A Cross-Line-2, both southbound). Older logs are analysed without the E/F lines unless they are added back to the stages",
     "2026-10-23 analysis: chain_window_s 20 -> 30 (cars stop up to ~22 s between zones, e.g. 10/23 14:18 between C/D B2 and B B2)",
-    "2026-10-24 03:13  A Cross-Line-2 reversed (right to left): northbound exit check between A B2 and A B1; A Cross-Line-1 alone is the southbound A line. For logs before this use config-until-2026-10-24-0313.json"
+    "2026-10-24 03:13  A Cross-Line-2 reversed (right to left): northbound exit check between A B2 and A B1; A Cross-Line-1 alone is the southbound A line. For logs before this use config-until-2026-10-24-0313.json",
+    "2026-10-26 ~21:00  IP-CAM-A and IP-CAM-F zones moved (A Box-0 now only on the HuoShih arterial, out of reach of a car reversing out of the mouth); F Box-2 added on the HuoShih side past the mouth (fires 1-2 s after F Box-0 or A Cross-Line-2). F Box-2 is not a route stage"
   ]
 }

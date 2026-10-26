@@ -56,6 +56,7 @@ import os
 import queue
 import re
 import socket
+import socketserver
 import subprocess
 import sys
 import threading
@@ -151,6 +152,19 @@ def packet_text(settings):
 
 # --------------------------------------------------------- camera server
 
+SERVER_GRACE_S = 10.0   # the camera server may take this long to open its port at start-up
+
+
+class FastHTTPServer(ThreadingHTTPServer):
+    """No look-up of this PC's network name when the port opens: right after
+    Windows starts that look-up can take seconds, and nothing here needs it."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
 class CameraHandler(BaseHTTPRequestHandler):
     """Answers every camera POST with 200 at once and queues the message with
     this PC's receive time."""
@@ -191,14 +205,22 @@ class CameraServer(threading.Thread):
         self.inbox, self.log = inbox, log
         self.httpd = None
         self.ok = False
+        self.starting = True                # until the first try to open the port is over
+        self.started_at = time.monotonic()
         self._stop_event = threading.Event()
+
+    @property
+    def usable(self):
+        """Listening, or still opening the port just after start-up."""
+        return self.ok or (self.starting and time.monotonic() - self.started_at < SERVER_GRACE_S)
 
     def run(self):
         warned = False
         while not self._stop_event.is_set():
             try:
-                httpd = ThreadingHTTPServer((HTTP_HOST, HTTP_PORT), CameraHandler)
+                httpd = FastHTTPServer((HTTP_HOST, HTTP_PORT), CameraHandler)
             except OSError as exc:
+                self.starting = False
                 if not warned:
                     self.log(f"Camera server cannot use port {HTTP_PORT}: {exc}. Is "
                              f"HTTP_Server.py still running? Retrying every {RETRY_SECONDS} s", "ERROR")
@@ -208,7 +230,7 @@ class CameraServer(threading.Thread):
             httpd.daemon_threads = True
             httpd.inbox = self.inbox
             self.httpd = httpd
-            self.ok = True
+            self.ok, self.starting = True, False
             self.log(f"Camera server listening on port {HTTP_PORT}", "SUCCESS")
             try:
                 httpd.serve_forever(poll_interval=0.5)
@@ -434,7 +456,7 @@ class Controller(threading.Thread):
         engine = self.engine
         try:
             settings = engine.tick(time.monotonic(), datetime.now(), offline=self.app.pinger.offline,
-                                   server_ok=self.app.server.ok, extra=extra)
+                                   server_ok=self.app.server.usable, extra=extra)
         except Exception:                       # noqa: BLE001 - lights must never go dark
             if extra:
                 return None

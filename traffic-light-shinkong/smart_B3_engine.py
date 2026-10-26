@@ -32,7 +32,8 @@ The HuoShih mouth (spots 1-3) is one car wide; from B Box-1 to the GuiLan end
 (spots 4-8) the lane is two-way and cars going opposite ways pass each other.
 A Box-0 (HuoShih arterial before 0x00) and C/D Box-0 (GuiLan arterial) only
 choose the countdown length; F Box-1 (north branch) means a car at F Box-0
-turned right.  Every message is timed by this PC when it arrives; anything the
+turned right; F Box-2 (HuoShih side, past the mouth) only shows a car backing
+out has left.  Every message is timed by this PC when it arrives; anything the
 camera writes into the message besides the zone name is ignored.
 
 Every car is a vehicle event with a direction, a place (its front spot) and a
@@ -87,6 +88,18 @@ confidence score:
     outside, it still holds the lights for gone_s first, as A Cross-Line-2
     fires for some southbound cars driving in: a message further in during
     that time means it did not back out, and the countdown goes on.
+  * The HuoShih mouth is one car wide, so while a southbound car backs into it
+    from deeper in, a "new" southbound car seen only in the mouth since then
+    (its rear, or a line it set off while reversing) is that same car.
+  * Setting backing_stop (Off by default): while a car that had been in the
+    lane backs out of its entry end (back in the mouth: A Box-2/B Box-0 or
+    nearer HuoShih, C/D/E Box-2 or nearer GuiLan), the arterial behind it is
+    stopped: southbound at HuoShih 0x00 counts down z and turns red while 0x01
+    stays red; northbound at GuiLan 0x02/0x03 count down x and turn red.  The
+    stop ends backing_clear_s (3 s) after the car is seen outside (F Box-0,
+    else F Box-1 / F Box-2; C/D/E Box-1 or Box-0 at GuiLan), when it drives in
+    again, or when it is no longer tracked; never before the countdown has
+    turned red, and never later than max_red.
   * A cross-line for a direction that no car of that direction explains always
     starts a car of that direction: a missed car is the dangerous failure, a
     false one only costs a short red.
@@ -155,7 +168,13 @@ MULTI_CAMERA_LINES = {8}            # C and D both report the GuiLan line for on
 HUOSHIH_ARTERIAL = {("A", "B0")}    # selects z1 / z2
 GUILAN_ARTERIAL = {("C", "B0"), ("D", "B0")}   # selects x1 / x2
 NORTH_BRANCH = {("F", "B1")}        # a car at F Box-0 turned right, not into the lane
-OTHER_ZONES = {("E", "B0")}         # kept for the record only
+OTHER_ZONES = {("E", "B0"), ("F", "B2")}   # kept for the record (F Box-2: HuoShih side past the mouth)
+MOUTH = {S: 3, N: 7}                # a car backing out is at its entry end: S spot <= 3, N spot >= 7
+BACK_END = {S: "HuoShih", N: "GuiLan"}     # where a car of that direction backs out
+BACK_OUT_ZONES = {                  # a car backing out is outside once one of these reports
+    S: [("F", "B0"), ("F", "B1"), ("F", "B2")],
+    N: [("C", "B1"), ("D", "B1"), ("E", "B1"), ("C", "B0"), ("D", "B0"), ("E", "B0")],
+}
 
 # zones every clean trip should fire (camera health); a set = any one of them
 HEALTH_ROUTE = {
@@ -188,6 +207,9 @@ def zone_name(zone):
 
 def label(key):
     return f"{key[0]} {zone_name(key[1])}"
+
+
+LABEL_SPOT = {label(k): sp for k, sp in SPOT.items()}    # 'A Box-1' -> 1, for a car's path
 
 
 def zone_of_text(text):
@@ -225,6 +247,10 @@ class Settings:
     v: int = _f(0, "0x01 red -> 0x00 green (v)", "Lights", 0, 30)
     south_start: str = _f("A Box-1", "Southbound countdown starts at A Box-1 (after F Box-0) or A Box-2",
                           "Lights", choices=("A Box-1", "A Box-2"))
+    backing_stop: str = _f("Off", "Car backing out of the lane: stop the arterial behind it "
+                                  "(0x00 / 0x02-0x03)", "Lights", choices=("Off", "On"))
+    backing_clear_s: float = _f(3.0, "... released this long after the car is seen outside "
+                                     "(F Box-0 / C/D/E Box-1) (s)", "Lights", 0, 30)
     max_red: int = _f(60, "A car that does not move holds the lights at most (s)", "Lights", 10, 600)
     blank_number: int = _f(0, "Number byte for a plain colour (0 = no digits)", "Lights", 0, 255)
 
@@ -361,6 +387,17 @@ class Vehicle:
         return SPOT_NAMES[self.front]
 
 
+@dataclass(eq=False)
+class ArterialStop:
+    """The arterial behind a car backing out of the lane is held red for it."""
+    car: Vehicle
+    start: float
+    hold_until: float          # the countdown and a moment of red, whatever happens
+    why: str
+    out_seen: float | None = None    # first report from outside after the stop started
+    out_zone: tuple | None = None
+
+
 class Tracker:
     """Gives every message to a car and moves the cars along the lane."""
 
@@ -372,6 +409,7 @@ class Tracker:
         self.active_spans = []          # (start, end) of every car that held the lights
         self.done = []                  # finished cars that were in the lane (newest last)
         self.orphans = []               # (time, zone) of lane boxes no car explained
+        self.stops = {}                 # car id -> ArterialStop (setting backing_stop)
         self.keep_done = 2000
 
     @property
@@ -651,9 +689,16 @@ class Tracker:
         self._moved_back(v, t, f"crossed {label(key)} backwards", line=True)
 
     def _moved_back(self, v, t, why, line=False):
+        d = v.direction
+        if (v.front - MOUTH[d]) * SIGN[d] <= 0:          # back at its entry end
+            if d == S:
+                self._merge_into(v, t)
+            if v.inside:
+                self._stop_arterial(v, t, why)
         if (v.front - OUTSIDE[v.direction]) * SIGN[v.direction] <= 0:
-            v.out_why = why
-            if not line:                                # its boxes said so for RETREAT_S already
+            if v.out_since is None:
+                v.out_why = why
+            if not line and v.out_since is None:        # its boxes said so for RETREAT_S already
                 self._backed_out(v, t)
             elif v.out_since is None:
                 # back over its entry line: it keeps the lights gone_s more, as one
@@ -669,6 +714,7 @@ class Tracker:
     # -------------------------------------------------------------- time
     def update(self, t, north_go):
         s = self.s
+        self._check_stops(t)
         for v in list(self.vehicles):
             if not v.live:
                 if t - v.end_time > LINGER_S:
@@ -719,6 +765,88 @@ class Tracker:
                 v.parked = True
                 self.e.event(f"{self._name(v)} has not moved for {s.max_red} s at {v.where}; "
                              f"it no longer holds the lights", "WARN")
+
+    def _merge_into(self, x, t):
+        """Southbound car x backs into the one-car-wide HuoShih mouth.  A newer
+        southbound car seen only in the mouth since x went deeper in was x itself:
+        its rear, or a line it set off while reversing (no second car can get into
+        the mouth behind a car that is backing out of it)."""
+        deep = min((tt for sp, tt in x.first.items() if sp > MOUTH[S]), default=None)
+        if deep is None:
+            return
+        for y in list(self.vehicles):
+            if y is x or y.direction != S or not y.live:
+                continue
+            spots = [SPOT[k] for k in y.visited if k in SPOT]
+            mouth = [tt for tt, lab in y.path
+                     if 1 <= LABEL_SPOT.get(lab.split(" (")[0], -1) <= MOUTH[S]]
+            if (not spots or max(spots) > MOUTH[S] or y.front > MOUTH[S]
+                    or not mouth or min(mouth) < deep):
+                continue
+            x.visited |= y.visited
+            x.path = sorted(x.path + y.path, key=lambda p: p[0])
+            for k, last in y.zones.items():
+                x.zones[k] = max(last, x.zones.get(k, last))
+            for sp, c in y.crossed_back.items():
+                x.crossed_back.setdefault(sp, c)
+            x.seen = max(x.seen, y.seen)
+            if y.out_since is not None:                 # it crossed A Cross-Line-2 backwards
+                x.front = min(x.front, y.front)
+                if x.out_since is None:
+                    x.out_since, x.out_why = y.out_since, y.out_why
+            self.vehicles.remove(y)
+            stop = self.stops.pop(y.vid, None)
+            if stop is not None and x.vid not in self.stops:
+                stop.car = x
+                self.stops[x.vid] = stop
+            self.e.event(f"Southbound car #{y.vid} was #{x.vid} backing up in the mouth "
+                         f"(one car wide); merged", "EVENT")
+
+    def _stop_arterial(self, v, t, why):
+        """A car that had been in the lane backs out of its entry end: if the
+        setting asks for it, hold the arterial it backs into red until it is seen
+        outside (southbound at HuoShih: 0x00, with 0x01 kept red; northbound at
+        GuiLan: 0x02/0x03)."""
+        s = self.s
+        if s.backing_stop != "On" or v.vid in self.stops:
+            return
+        countdown = max(s.z1, s.z2) if v.direction == S else max(s.x1, s.x2)
+        self.stops[v.vid] = ArterialStop(v, t, t + countdown + 1, why)
+        light = "0x00 turns red (0x01 stays red)" if v.direction == S else "0x02/0x03 turn red"
+        self.e.event(f"{self._name(v)} backing out at {BACK_END[v.direction]} ({why}): {light} "
+                     f"for it", "EVENT")
+
+    def _check_stops(self, t):
+        """Release an arterial held for a car backing out backing_clear_s after the
+        car is seen outside (F Box-0, else F Box-1 / F Box-2; at GuiLan C/D/E
+        Box-1 or Box-0), once its countdown has turned red."""
+        s = self.s
+        for vid, stop in list(self.stops.items()):
+            v, d = stop.car, stop.car.direction
+            if stop.out_seen is None:
+                for k in BACK_OUT_ZONES[d]:
+                    if self.last.get(k, -1e18) >= stop.start:
+                        stop.out_seen, stop.out_zone = self.last[k], k
+                        break
+            if t - stop.start >= s.max_red:
+                why, level = f"still not seen outside after {s.max_red} s", "WARN"
+            elif t < stop.hold_until:
+                continue
+            elif stop.out_seen is not None:
+                if t < stop.out_seen + s.backing_clear_s:
+                    continue
+                why, level = (f"seen outside at {label(stop.out_zone)} "
+                              f"{s.backing_clear_s:g} s ago"), "EVENT"
+            elif not v.live:
+                why, level = "no longer seen", "EVENT"
+            elif (v.front - MOUTH[d]) * SIGN[d] > 0:
+                why, level = "it drives into the lane again", "EVENT"
+            else:
+                continue
+            del self.stops[vid]
+            light = "0x00" if d == S else "0x02/0x03"
+            self.e.event(f"{self._name(v)} backing out at {BACK_END[d]}: {why}; {light} "
+                         f"released", level)
 
     def _backed_out(self, v, t):
         v.state, v.backing, v.parked, v.inside = "candidate", False, False, False
@@ -776,8 +904,13 @@ class Tracker:
         return f"{NAME[v.direction].capitalize()} car #{v.vid}"
 
     def demand(self):
+        """(a southbound car holds 0x02/0x03, a northbound car holds 0x00/0x01,
+        0x00 held red for a southbound car backing out, 0x02/0x03 held red for a
+        northbound car backing out)"""
+        stops = [stop.car.direction for stop in self.stops.values()]
         return (any(v.holding and v.direction == S for v in self.vehicles),
-                any(v.holding and v.direction == N for v in self.vehicles))
+                any(v.holding and v.direction == N for v in self.vehicles),
+                S in stops, N in stops)
 
     def recent(self, keys, t, window):
         return any(t - self.last.get(k, -1e18) <= window for k in keys)
@@ -886,6 +1019,8 @@ class Lights:
         self.transition = None
         self.shown = None               # settings of the last packet
         self.red_since = {S: None, N: None}
+        self.hold_00 = False            # 0x00 held red for a southbound car backing out
+        self.north_went_go = False      # 0x01 has been green since 0x00 turned red
 
     @property
     def north_go(self):
@@ -898,7 +1033,7 @@ class Lights:
         dues = [u for _, u in (self.south, self.north) if u is not None and u > self.e.now]
         return min(dues, default=None)
 
-    def step(self, south_demand, north_demand, x, z, fixed, extra=False):
+    def step(self, south_demand, north_demand, x, z, fixed, extra=False, hold_00=False):
         s = self.e.settings
         if extra and self.mode != "smart":
             return self.shown                           # the fixed cycle only moves once a second
@@ -909,25 +1044,26 @@ class Lights:
         elif self.mode == "fixed":
             if not fixed and self.second == s.clearance_1 and self.program:
                 self._back_to_smart(south_demand, north_demand)
-                out = self._smart_step(south_demand, north_demand, x, z, fresh=True)
+                out = self._smart_step(south_demand, north_demand, x, z, fresh=True, hold=hold_00)
             else:
                 if self.second == 0:
                     self.program = fixed_program(s)     # settings changes apply per cycle
                 out = self.program[self.second]
                 self.second = (self.second + 1) % len(self.program)
         else:
-            out = self._smart_step(south_demand, north_demand, x, z)
+            out = self._smart_step(south_demand, north_demand, x, z, hold=hold_00)
         self.shown = out
         return out
 
     # ------------------------------------------------------------ smart
-    def _smart_step(self, sd, nd, x, z, fresh=False):
+    def _smart_step(self, sd, nd, x, z, fresh=False, hold=False):
         s, now = self.e.settings, self.e.now
         blank = s.blank_number
         old_south, old_north = self.south, self.north
+        self.hold_00 = hold
         if not fresh:
             self.south = self._south(sd, x, now)
-            self.north = self._north(nd, z, now)
+            self.north = self._north(nd, z, now, hold)
 
         def left(until):                                # whole seconds still to show
             return max(1, math.ceil(until - now - 1e-6))
@@ -969,45 +1105,54 @@ class Lights:
                 break
         return st, until
 
-    def _north(self, demand, z, now):
+    def _north(self, demand, z, now, hold=False):
+        """demand: a northbound car wants 0x00 red then 0x01 green.  hold: a
+        southbound car backs out at HuoShih: 0x00 red, and 0x01 stays red."""
         s = self.e.settings
+        want_red, want_go = demand or hold, demand and not hold
 
         def allred(start):
-            return ("allred", start + s.w) if s.w > 0 else ("go", None)
+            return ("allred", start + s.w) if s.w > 0 or not want_go else ("go", None)
 
         def clear(start):
-            return ("clear", start + s.v) if s.v > 0 else ("idle", None)
+            # the v s all red only follows a 0x01 green (not a stop for a car backing out)
+            return ("clear", start + s.v) if s.v > 0 and self.north_went_go else ("idle", None)
 
         st, until = self.north
         for _ in range(8):
             before = (st, until)
             due = until is not None and now >= until
             if st == "idle":
-                if demand:
+                if want_red:
                     st, until = ("count", now + z) if z > 0 else allred(now)
             elif st == "count":
-                if not demand:
+                if not want_red:
                     st, until = "idle", None
                 elif due:
                     st, until = allred(until)
             elif st == "allred":
-                if not demand:
+                if not want_red:
                     st, until = clear(now)
-                elif due:
+                elif due and want_go:
                     st, until = "go", None
             elif st == "go":
-                if not demand:
-                    st, until = ("end", now + s.u) if s.u > 0 else clear(now)
+                if not want_go:
+                    st, until = ("end", now + s.u) if s.u > 0 else (
+                        allred(now) if want_red else clear(now))
             elif st == "end":
-                if demand:
+                if want_go:
                     st, until = "go", None
                 elif due:
-                    st, until = clear(until)
+                    st, until = allred(until) if want_red else clear(until)
             elif st == "clear":
-                if demand:
+                if want_red:
                     st, until = allred(now)
                 elif due:
                     st, until = "idle", None
+            if st == "go":
+                self.north_went_go = True
+            elif st == "idle":
+                self.north_went_go = False
             if (st, until) == before:
                 break
         return st, until
@@ -1029,7 +1174,8 @@ class Lights:
         if nt != old_north[0]:
             text = {"count": f"0x00 green countdown {z} s ({'car on HuoShih arterial' if z == s.z1 else 'HuoShih arterial empty'}) "
                              f"for {e.holders(N)}",
-                    "allred": f"0x00 red, 0x01 green in {s.w} s",
+                    "allred": (f"0x00 red for {e.holders(N)}; 0x01 stays red" if self.hold_00
+                               else f"0x00 red, 0x01 green in {s.w} s"),
                     "go": f"0x01 green for {e.holders(N)}",
                     "end": f"0x01 green countdown {s.u} s: no northbound car left",
                     "clear": f"0x01 red, 0x00 green in {s.v} s",
@@ -1079,6 +1225,7 @@ class Lights:
         self.mode, self.program, self.second = "smart", None, 0
         self.south = ("hold", None) if sd else ("idle", None)
         self.north = ("go", None) if nd else ("idle", None)
+        self.north_went_go = bool(nd)
         self.e.event("Back to smart control after the all-red clearance", "INFO")
 
 
@@ -1100,7 +1247,7 @@ class Engine:
         self.started = None
         self.unknown = set()
         self.forced_fixed = False               # operator chose the fixed cycle
-        self.last_demand = (False, False)       # (southbound, northbound) at the last packet
+        self.last_demand = (False,) * 4         # Tracker.demand() at the last packet
         self.fixed_reason = ""
         self.silent_from = None                 # last message before the silence alarm fired
 
@@ -1140,7 +1287,7 @@ class Engine:
             self.started = t
         s = self.settings
         self.tracker.update(t, self.lights.north_go)
-        sd, nd = self.last_demand = self.tracker.demand()
+        sd, nd, stop_00, stop_23 = self.last_demand = self.tracker.demand()
         x = s.x1 if self.tracker.recent(GUILAN_ARTERIAL, t, s.x_window) else s.x2
         z = s.z1 if self.tracker.recent(HUOSHIH_ARTERIAL, t, s.z_window) else s.z2
         reason = self._fixed_reason(t, wall, offline, server_ok)
@@ -1153,7 +1300,8 @@ class Engine:
                 self.fixed_reason = ""
             else:
                 self.fixed_reason = ""
-        return self.lights.step(sd, nd, x, z, bool(self.fixed_reason), extra=extra)
+        return self.lights.step(sd or stop_23, nd, x, z, bool(self.fixed_reason), extra=extra,
+                                hold_00=stop_00)
 
     def _fixed_reason(self, t, wall, offline, server_ok):
         s = self.settings
@@ -1185,10 +1333,12 @@ class Engine:
             self.log(msg, "TRACE")
 
     def holders(self, direction):
-        cars = [v for v in self.tracker.vehicles if v.holding and v.direction == direction]
-        if not cars:
-            return "no car"
-        return ", ".join(f"#{v.vid} at {v.where}" for v in cars)
+        """Cars the lights of that direction are red or counting down for."""
+        cars = [f"#{v.vid} at {v.where}" for v in self.tracker.vehicles
+                if v.holding and v.direction == direction]
+        cars += [f"#{stop.car.vid} backing out at {BACK_END[stop.car.direction]}"
+                 for stop in self.tracker.stops.values() if stop.car.direction != direction]
+        return ", ".join(cars) if cars else "no car"
 
     def camera_status(self, offline=frozenset()):
         """{camera: (status, detail)}; status OK / SUSPECT / OFFLINE."""
