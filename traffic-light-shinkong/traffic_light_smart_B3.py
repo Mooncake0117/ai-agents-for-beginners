@@ -80,7 +80,8 @@ DEFAULT_IP = "192.168.7.161"     # ETH-to-RS485 of the B3 lights
 DEFAULT_PORT = 1111
 QUANTITY = 4                     # 0x00, 0x01, 0x02, 0x03
 HTTP_HOST = ""                   # "" = every address of this PC, including 192.168.7.170
-HTTP_PORT = 8000
+HTTP_PORT = 8100                 # cameras post to http://192.168.7.170:8100/IP-CAM-A ... -F;
+                                 # 8000 and 8200 belong to the ASUS parking display suite
 PC_ADDRESS = "192.168.7.170"     # where the cameras send; only checked, for a warning
 
 WARM_KEEPALIVE = True            # True: all lights flash red 88 / dark while stopped
@@ -156,10 +157,17 @@ SERVER_GRACE_S = 10.0   # the camera server may take this long to open its port 
 
 
 class FastHTTPServer(ThreadingHTTPServer):
-    """No look-up of this PC's network name when the port opens: right after
+    """The port is this program's alone: on Windows, SO_REUSEADDR (Python's
+    default for HTTP servers) would let another program bind the same port and
+    take some of the camera messages, so it is replaced by SO_EXCLUSIVEADDRUSE.
+    No look-up of this PC's network name when the port opens: right after
     Windows starts that look-up can take seconds, and nothing here needs it."""
 
+    allow_reuse_address = sys.platform != "win32"
+
     def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         socketserver.TCPServer.server_bind(self)
         self.server_name = "localhost"
         self.server_port = self.server_address[1]
@@ -222,8 +230,9 @@ class CameraServer(threading.Thread):
             except OSError as exc:
                 self.starting = False
                 if not warned:
-                    self.log(f"Camera server cannot use port {HTTP_PORT}: {exc}. Is "
-                             f"HTTP_Server.py still running? Retrying every {RETRY_SECONDS} s", "ERROR")
+                    self.log(f"Camera server cannot use port {HTTP_PORT}: {exc}. Another "
+                             f"program (HTTP_Server.py?) has it. Retrying every {RETRY_SECONDS} s",
+                             "ERROR")
                     warned = True
                 self._stop_event.wait(RETRY_SECONDS)
                 continue

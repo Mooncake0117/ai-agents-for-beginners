@@ -96,10 +96,14 @@ confidence score:
     nearer HuoShih, C/D/E Box-2 or nearer GuiLan), the arterial behind it is
     stopped: southbound at HuoShih 0x00 counts down z and turns red while 0x01
     stays red; northbound at GuiLan 0x02/0x03 count down x and turn red.  The
-    stop ends backing_clear_s (3 s) after the car is seen outside (F Box-0,
-    else F Box-1 / F Box-2; C/D/E Box-1 or Box-0 at GuiLan), when it drives in
-    again, or when it is no longer tracked; never before the countdown has
-    turned red, and never later than max_red.
+    stop ends backing_clear_s (3 s) after F Box-0 reports, at once when F Box-1
+    or F Box-2 does, or (at GuiLan) once C/D/E Box-2 has been quiet for
+    backing_clear_s; also when the car drives in again or is no longer
+    tracked; never before the countdown has turned red, never later than
+    max_red.  A northbound car meanwhile waits for 0x01: it turns green when
+    the stop ends (0x00 has been red w s by then), and after it 0x01 counts
+    down u and 0x00 turns green v s later as usual.  Without a northbound
+    car 0x00 turns green as soon as the stop ends (v follows a 0x01 green).
   * A cross-line for a direction that no car of that direction explains always
     starts a car of that direction: a missed car is the dangerous failure, a
     false one only costs a short red.
@@ -171,10 +175,9 @@ NORTH_BRANCH = {("F", "B1")}        # a car at F Box-0 turned right, not into th
 OTHER_ZONES = {("E", "B0"), ("F", "B2")}   # kept for the record (F Box-2: HuoShih side past the mouth)
 MOUTH = {S: 3, N: 7}                # a car backing out is at its entry end: S spot <= 3, N spot >= 7
 BACK_END = {S: "HuoShih", N: "GuiLan"}     # where a car of that direction backs out
-BACK_OUT_ZONES = {                  # a car backing out is outside once one of these reports
-    S: [("F", "B0"), ("F", "B1"), ("F", "B2")],
-    N: [("C", "B1"), ("D", "B1"), ("E", "B1"), ("C", "B0"), ("D", "B0"), ("E", "B0")],
-}
+HUOSHIH_OUT = ("F", "B0")           # a car backing out at HuoShih: 0x00 freed backing_clear_s after it,
+HUOSHIH_OUT_BACKUP = [("F", "B1"), ("F", "B2")]     # or at once after one of these
+GUILAN_MOUTH = [("C", "B2"), ("D", "B2"), ("E", "B2")]  # at GuiLan: freed once these are quiet
 
 # zones every clean trip should fire (camera health); a set = any one of them
 HEALTH_ROUTE = {
@@ -249,8 +252,8 @@ class Settings:
                           "Lights", choices=("A Box-1", "A Box-2"))
     backing_stop: str = _f("Off", "Car backing out of the lane: stop the arterial behind it "
                                   "(0x00 / 0x02-0x03)", "Lights", choices=("Off", "On"))
-    backing_clear_s: float = _f(3.0, "... released this long after the car is seen outside "
-                                     "(F Box-0 / C/D/E Box-1) (s)", "Lights", 0, 30)
+    backing_clear_s: float = _f(3.0, "... released this long after F Box-0 / after C/D/E Box-2 "
+                                     "goes quiet (s)", "Lights", 0, 30)
     max_red: int = _f(60, "A car that does not move holds the lights at most (s)", "Lights", 10, 600)
     blank_number: int = _f(0, "Number byte for a plain colour (0 = no digits)", "Lights", 0, 255)
 
@@ -394,8 +397,7 @@ class ArterialStop:
     start: float
     hold_until: float          # the countdown and a moment of red, whatever happens
     why: str
-    out_seen: float | None = None    # first report from outside after the stop started
-    out_zone: tuple | None = None
+    out_seen: float | None = None    # first F Box-0 report after the stop started
 
 
 class Tracker:
@@ -817,30 +819,35 @@ class Tracker:
                      f"for it", "EVENT")
 
     def _check_stops(self, t):
-        """Release an arterial held for a car backing out backing_clear_s after the
-        car is seen outside (F Box-0, else F Box-1 / F Box-2; at GuiLan C/D/E
-        Box-1 or Box-0), once its countdown has turned red."""
+        """Release the arterial held for a car backing out, once its countdown has
+        turned red.  HuoShih (0x00): backing_clear_s after F Box-0 reports, or at
+        once when F Box-1 / F Box-2 does.  GuiLan (0x02/0x03): once C/D/E Box-2
+        has been quiet for backing_clear_s (Box-1 and Box-0 there also see the
+        GuiLan traffic, other cars in Box-2 only make the stop longer)."""
         s = self.s
         for vid, stop in list(self.stops.items()):
             v, d = stop.car, stop.car.direction
-            if stop.out_seen is None:
-                for k in BACK_OUT_ZONES[d]:
-                    if self.last.get(k, -1e18) >= stop.start:
-                        stop.out_seen, stop.out_zone = self.last[k], k
-                        break
+            if d == S and stop.out_seen is None and self.last.get(HUOSHIH_OUT, -1e18) >= stop.start:
+                stop.out_seen = self.last[HUOSHIH_OUT]
+            backup = next((k for k in HUOSHIH_OUT_BACKUP if self.last.get(k, -1e18) >= stop.start),
+                          None) if d == S else None
+            box2 = max([stop.start] + [self.last.get(k, -1e18) for k in GUILAN_MOUTH])
             if t - stop.start >= s.max_red:
                 why, level = f"still not seen outside after {s.max_red} s", "WARN"
             elif t < stop.hold_until:
                 continue
+            elif (v.front - MOUTH[d]) * SIGN[d] > 0 and v.live:
+                why, level = "it drives into the lane again", "EVENT"
+            elif backup is not None:
+                why, level = f"seen outside at {label(backup)}", "EVENT"
             elif stop.out_seen is not None:
                 if t < stop.out_seen + s.backing_clear_s:
                     continue
-                why, level = (f"seen outside at {label(stop.out_zone)} "
-                              f"{s.backing_clear_s:g} s ago"), "EVENT"
-            elif not v.live:
+                why, level = f"{label(HUOSHIH_OUT)} {s.backing_clear_s:g} s ago", "EVENT"
+            elif d == N and t - box2 >= s.backing_clear_s:
+                why, level = f"C/D/E Box-2 quiet for {s.backing_clear_s:g} s", "EVENT"
+            elif d == S and not v.live:
                 why, level = "no longer seen", "EVENT"
-            elif (v.front - MOUTH[d]) * SIGN[d] > 0:
-                why, level = "it drives into the lane again", "EVENT"
             else:
                 continue
             del self.stops[vid]
