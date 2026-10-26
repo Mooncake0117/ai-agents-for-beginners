@@ -80,9 +80,13 @@ confidence score:
     joins the car a cross-line then reveals behind it.
   * Backing up is seen as a cross-line crossed against the car's direction, or
     its front box going quiet while a box behind it keeps reporting.  Inside the
-    lane that only lowers the score; once the car is back outside its entry
+    lane that only lowers the score.  Once the car is back outside its entry
     (A Box-1 / C/D/E Box-1) it stops holding the lights and is a candidate
-    again, so the next forward message restarts its trip and countdown.
+    again, so the next forward message restarts its trip and countdown.  When
+    a backwards entry line (A Cross-Line-2 / C/D Cross-Line-1) is what put it
+    outside, it still holds the lights for gone_s first, as A Cross-Line-2
+    fires for some southbound cars driving in: a message further in during
+    that time means it did not back out, and the countdown goes on.
   * A cross-line for a direction that no car of that direction explains always
     starts a car of that direction: a missed car is the dangerous failure, a
     false one only costs a short red.
@@ -331,6 +335,8 @@ class Vehicle:
     entered: bool = False      # has held the lights at some time
     inside: bool = False       # seen past the entry line (not only at the mouth)
     backing: bool = False
+    out_since: float | None = None   # backed out over its entry; still holds the lights gone_s
+    out_why: str = ""
     parked: bool = False
     unseen: bool = False       # only seen when it left the lane
     first: dict = field(default_factory=dict)     # spot -> first time the car reached it
@@ -440,6 +446,8 @@ class Tracker:
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
                 elif b == -1 and v.in_lane:
                     rank = (2, -v.seen)                 # the box just behind, car straddles both
+                elif b == -2 and v.in_lane and v.backing:
+                    rank = (2, -v.seen)                 # a car backing up, one box further back
                 else:
                     continue
             if rank[0] == 3 and (linger is None or rank < linger[1]):
@@ -574,6 +582,10 @@ class Tracker:
                 v.zones = {k: last for k, last in v.zones.items()
                            if k[1].startswith("CL") or
                            (BOX_INDEX[SPOT[k]] - here) * SIGN[v.direction] >= -1}
+            if v.out_since is not None and (v.front - OUTSIDE[v.direction]) * SIGN[v.direction] > 0:
+                v.out_since = None                      # it did not back out after all
+                self.e.event(f"{self._name(v)} back in the lane ({label(key)}): it did not "
+                             f"back out", "EVENT")
         if a > 0 or new_line:
             v.first.setdefault(spot, t)
             v.progress = t
@@ -636,16 +648,20 @@ class Tracker:
         v.path.append((t, label(key) + " (backwards)"))
         v.front = spot - SIGN[v.direction]
         v.crossed = {k: c for k, c in v.crossed.items() if (k - spot) * SIGN[v.direction] < 0}
-        self._moved_back(v, t, f"crossed {label(key)} backwards")
+        self._moved_back(v, t, f"crossed {label(key)} backwards", line=True)
 
-    def _moved_back(self, v, t, why):
+    def _moved_back(self, v, t, why, line=False):
         if (v.front - OUTSIDE[v.direction]) * SIGN[v.direction] <= 0:
-            v.state, v.backing, v.parked, v.inside = "candidate", False, False, False
-            v.base = min(v.base, self.s.score_active - self.s.score_box)
-            v.zones = {k: last for k, last in v.zones.items()
-                       if (SPOT[k] - OUTSIDE[v.direction]) * SIGN[v.direction] <= 0}
-            self.e.event(f"{self._name(v)} backed out of the lane ({why}); it no "
-                         f"longer holds the lights", "EVENT")
+            v.out_why = why
+            if not line:                                # its boxes said so for RETREAT_S already
+                self._backed_out(v, t)
+            elif v.out_since is None:
+                # back over its entry line: it keeps the lights gone_s more, as one
+                # stray line (A Cross-Line-2 fires for some cars driving in) must not
+                # stop a countdown; a message further in means it did not back out
+                v.out_since = t
+                self.e.event(f"{self._name(v)} backing out of the lane ({why}); lights "
+                             f"held {self.s.gone_s:g} s to be sure", "EVENT")
         else:
             v.base = max(self.s.cut_pct + 1, v.base - self.s.score_back)
             self.e.event(f"{self._name(v)} moving backwards ({why}), now at {v.where}", "EVENT")
@@ -663,6 +679,8 @@ class Tracker:
             v.zones = {k: last for k, last in v.zones.items() if t - last <= 60}
             if v.in_lane:
                 self._retreat(v, t)
+                if v.out_since is not None and t - v.out_since >= s.gone_s:
+                    self._backed_out(v, t)
             if not v.live:
                 continue
             if v.state == "candidate":
@@ -701,6 +719,15 @@ class Tracker:
                 v.parked = True
                 self.e.event(f"{self._name(v)} has not moved for {s.max_red} s at {v.where}; "
                              f"it no longer holds the lights", "WARN")
+
+    def _backed_out(self, v, t):
+        v.state, v.backing, v.parked, v.inside = "candidate", False, False, False
+        v.out_since = None
+        v.base = min(v.base, self.s.score_active - self.s.score_box)
+        v.zones = {k: last for k, last in v.zones.items()
+                   if (SPOT[k] - OUTSIDE[v.direction]) * SIGN[v.direction] <= 0}
+        self.e.event(f"{self._name(v)} backed out of the lane ({v.out_why}); it no "
+                     f"longer holds the lights", "EVENT")
 
     def _retreat(self, v, t):
         """Front box quiet while a box behind it keeps reporting: moved back."""
