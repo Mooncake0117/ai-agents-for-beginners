@@ -173,3 +173,7 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   2 s cases on 10/27); two of those fell just past the 2 s pairing window and became
   "unseen" cars (10:00:26, 14:35:54: extra red only). Window now 3 s.
 - Smart control paused by the operator 01:04-06:01.
+- Northbound on 10/27, live lights: all 166 trips recognised; 0x00 red at every exit.
+  Two fast cars (11:44:32 and 20:17:19, ~4 s from C/D CL2 to A CL2) left during the
+  all-red before 0x01 turned green, and 0x00 turned green 0-1 s after they came out
+  (the v all-red then only followed a 0x01 green). Fixed: u + v after such a car.

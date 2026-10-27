@@ -1050,6 +1050,7 @@ class Lights:
         self.red_since = {S: None, N: None}
         self.hold_00 = False            # 0x00 held red for a southbound car backing out
         self.north_went_go = False      # 0x01 has been green since 0x00 turned red
+        self.north_had_car = False      # a northbound car held 0x00 since it turned red
 
     @property
     def north_go(self):
@@ -1144,8 +1145,11 @@ class Lights:
             return ("allred", start + s.w) if s.w > 0 or not want_go else ("go", None)
 
         def clear(start):
-            # the v s all red only follows a 0x01 green (not a stop for a car backing out)
-            return ("clear", start + s.v) if s.v > 0 and self.north_went_go else ("idle", None)
+            # 0x00 stays red v s after 0x01 was green, u + v s after a northbound car
+            # that left before 0x01 turned green (a fast car, 10/27 11:44:36), and
+            # not at all after a stop for a car backing out
+            pause = s.v if self.north_went_go else (s.u + s.v if self.north_had_car else 0)
+            return ("clear", start + pause) if pause > 0 else ("idle", None)
 
         st, until = self.north
         for _ in range(8):
@@ -1181,7 +1185,9 @@ class Lights:
             if st == "go":
                 self.north_went_go = True
             elif st == "idle":
-                self.north_went_go = False
+                self.north_went_go = self.north_had_car = False
+            if demand and st != "idle":
+                self.north_had_car = True
             if (st, until) == before:
                 break
         return st, until
@@ -1207,7 +1213,7 @@ class Lights:
                                else f"0x00 red, 0x01 green in {s.w} s"),
                     "go": f"0x01 green for {e.holders(N)}",
                     "end": f"0x01 green countdown {s.u} s: no northbound car left",
-                    "clear": f"0x01 red, 0x00 green in {s.v} s",
+                    "clear": f"0x01 red, 0x00 green in {max(0, round((self.north[1] or e.now) - e.now))} s",
                     "idle": "0x00 green, 0x01 red"}[nt]
             if nt == "idle" and old_north[0] == "count":
                 text = "0x00 countdown stopped, green again: the northbound car is gone"
@@ -1254,7 +1260,7 @@ class Lights:
         self.mode, self.program, self.second = "smart", None, 0
         self.south = ("hold", None) if sd else ("idle", None)
         self.north = ("go", None) if nd else ("idle", None)
-        self.north_went_go = bool(nd)
+        self.north_went_go = self.north_had_car = bool(nd)
         self.e.event("Back to smart control after the all-red clearance", "INFO")
 
 
