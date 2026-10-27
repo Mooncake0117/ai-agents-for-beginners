@@ -156,3 +156,16 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   API) hit port 8000 at 14:50:38; the analyzer now skips non-camera POSTs.
 - Live decisions = replay of the same log (except a 10 s fixed-cycle blip at 04:17:06
   start-up: the camera server was slow to open its port after a restart; fixed).
+
+## B3_log_2026-10-27.txt: first full weekday under smart control (06:01-23:45)
+
+- 165 S / 166 N trips (busiest log so far). S: every stage >= 98% except B B0 92%
+  (14 misses; A B2, the same place, caught them). N: A CL2 96% (6 misses, 11:00-15:42),
+  4% wrong direction; every other stage >= 99%.
+- Since the 10/26 zone change F Box-1 fires far more (325 bursts vs 20) and for cars
+  turning into the lane: 20 of 164 southbound entries set it off just before A Box-1.
+  The engine had taken F Box-1 as "the car at F Box-0 turned right" and dropped it; with
+  A CL1, B B0 and B CL1 all missed that left one car unseen until the GuiLan exit
+  (10:04:18-10:04:24, 0x02/0x03 stayed green). Fixed in the engine (F Box-1 recorded
+  only; A Box-2 just before A Box-1 joins it; a southbound car at the mouth may skip a box).
+- Smart control paused by the operator 01:04-06:01.

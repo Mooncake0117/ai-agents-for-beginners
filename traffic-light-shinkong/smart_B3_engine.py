@@ -31,10 +31,11 @@ The lane as a row of spots, HuoShih end to GuiLan end
 The HuoShih mouth (spots 1-3) is one car wide; from B Box-1 to the GuiLan end
 (spots 4-8) the lane is two-way and cars going opposite ways pass each other.
 A Box-0 (HuoShih arterial before 0x00) and C/D Box-0 (GuiLan arterial) only
-choose the countdown length; F Box-1 (north branch) means a car at F Box-0
-turned right; F Box-2 (HuoShih side, past the mouth) only shows a car backing
-out has left.  Every message is timed by this PC when it arrives; anything the
-camera writes into the message besides the zone name is ignored.
+choose the countdown length; F Box-1 (north branch) and F Box-2 (HuoShih side,
+past the mouth) only show that a car backing out at HuoShih has left (since
+the 10/26 zone change F Box-1 also fires for cars turning into the lane).
+Every message is timed by this PC when it arrives; anything the camera writes
+into the message besides the zone name is ignored.
 
 Every car is a vehicle event with a direction, a place (its front spot) and a
 confidence score:
@@ -173,8 +174,9 @@ LINE_MOVES = {"CL1": S, "CL2": N}   # the direction a car crosses each line (cam
 MULTI_CAMERA_LINES = {8}            # C and D both report the GuiLan line for one car
 HUOSHIH_ARTERIAL = {("A", "B0")}    # selects z1 / z2
 GUILAN_ARTERIAL = {("C", "B0"), ("D", "B0")}   # selects x1 / x2
-NORTH_BRANCH = {("F", "B1")}        # a car at F Box-0 turned right, not into the lane
-OTHER_ZONES = {("E", "B0"), ("F", "B2")}   # kept for the record (F Box-2: HuoShih side past the mouth)
+OTHER_ZONES = {("E", "B0"), ("F", "B1"), ("F", "B2")}  # kept for the record; F Box-1 and F Box-2
+                                    # only show that a car backing out at HuoShih is outside (since the
+                                    # 10/26 zone change F Box-1 also fires for cars turning into the lane)
 MOUTH = {S: 3, N: 7}                # a car backing out is at its entry end: S spot <= 3, N spot >= 7
 BACK_END = {S: "HuoShih", N: "GuiLan"}     # where a car of that direction backs out
 HUOSHIH_OUT = ("F", "B0")           # a car backing out at HuoShih: 0x00 freed backing_clear_s after it,
@@ -426,11 +428,6 @@ class Tracker:
         self.last[key] = t
         if key in HUOSHIH_ARTERIAL or key in GUILAN_ARTERIAL or key in OTHER_ZONES:
             return
-        if key in NORTH_BRANCH:
-            for v in self.vehicles:
-                if v.state == "candidate" and v.direction == S and v.front == 0:
-                    self.finish(v, t, "cancelled", "turned right at HuoShih")
-            return
         spot = SPOT.get(key)
         if spot is None:
             self.e.unknown_zone(key)
@@ -484,7 +481,8 @@ class Tracker:
                     continue
             else:
                 b = self._box_steps(v, spot)
-                reach = 2 if v.inside and v.in_lane else 1   # in the lane: one missed box allowed
+                # in the lane, or a southbound car in the HuoShih mouth: one missed box allowed
+                reach = 2 if (v.inside and v.in_lane) or (v.direction == S and 1 <= v.front <= MOUTH[S]) else 1
                 if 0 <= b <= reach and not self._blocked(v, spot, t):
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
                 elif b == -1 and v.in_lane:
@@ -501,16 +499,29 @@ class Tracker:
             best = linger[0]                            # not a jump over a box: the car that just left
         if best is not None:
             self._attach(best, t, key, spot, None)
+            if spot == 1 and best.direction == S:
+                self._join_mouth(best, t)
             return
         if spot == 0:
             self._new(t, key, S, 0, self.s.score_candidate_s)
         elif spot == 1:
-            self._new(t, key, S, 1, self.s.score_candidate_s + self.s.score_box)
+            self._join_mouth(self._new(t, key, S, 1, self.s.score_candidate_s + self.s.score_box), t)
         elif spot == 9:
             self._new(t, key, N, 9, self.s.score_candidate_n)
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
+
+    def _join_mouth(self, v, t):
+        """A Box-2 / B Box-0 reported by no car a moment before this southbound
+        car's A Box-1: the order of messages within one second is not known, so
+        it was this car moving in (10/27 10:04:18)."""
+        mine = [o for o in self.orphans if SPOT[o[1]] == MOUTH[S] and 0 <= t - o[0] <= 1.5]
+        if not mine:
+            return
+        self.orphans = [o for o in self.orphans if o not in mine]
+        for o in mine:
+            self._attach(v, t, o[1], MOUTH[S], None)
 
     def _line(self, t, key, spot, move):
         cam = key[0]
