@@ -32,8 +32,9 @@ The HuoShih mouth (spots 1-3) is one car wide; from B Box-1 to the GuiLan end
 (spots 4-8) the lane is two-way and cars going opposite ways pass each other.
 A Box-0 (HuoShih arterial before 0x00) and C/D Box-0 (GuiLan arterial) only
 choose the countdown length; F Box-1 (north branch) and F Box-2 (HuoShih side,
-past the mouth) only show that a car backing out at HuoShih has left (since
-the 10/26 zone change F Box-1 also fires for cars turning into the lane).
+past the mouth) only show that a car backing out at HuoShih has left.  F Box-1
+cannot say which car at F Box-0 turned right: a car behind turning right would
+drop the one turning into the lane (10/27 10:04).
 Every message is timed by this PC when it arrives; anything the camera writes
 into the message besides the zone name is ignored.
 
@@ -45,7 +46,7 @@ confidence score:
     that still sits in a box between them (cars cannot overtake).  A
     cross-line sends one message per car, so a line one car has crossed is
     crossed next by the car behind it.  C and D both report the GuiLan line:
-    the second camera's report within 2 s belongs to the car that has just
+    the second camera's report within 3 s belongs to the car that has just
     crossed (even if that car has already left), not to the car behind it.
     A box beyond the one in front of a car (one missed) goes to the car that
     has just left through there before it goes to the car behind.  Only a car
@@ -175,8 +176,8 @@ MULTI_CAMERA_LINES = {8}            # C and D both report the GuiLan line for on
 HUOSHIH_ARTERIAL = {("A", "B0")}    # selects z1 / z2
 GUILAN_ARTERIAL = {("C", "B0"), ("D", "B0")}   # selects x1 / x2
 OTHER_ZONES = {("E", "B0"), ("F", "B1"), ("F", "B2")}  # kept for the record; F Box-1 and F Box-2
-                                    # only show that a car backing out at HuoShih is outside (since the
-                                    # 10/26 zone change F Box-1 also fires for cars turning into the lane)
+                                    # only show that a car backing out at HuoShih is outside (F Box-1
+                                    # cannot say which car at F Box-0 turned right)
 MOUTH = {S: 3, N: 7}                # a car backing out is at its entry end: S spot <= 3, N spot >= 7
 BACK_END = {S: "HuoShih", N: "GuiLan"}     # where a car of that direction backs out
 HUOSHIH_OUT = ("F", "B0")           # a car backing out at HuoShih: 0x00 freed backing_clear_s after it,
@@ -198,7 +199,7 @@ SOUTH_ENTRY = {"A": [("A", "B1"), ("A", "CL1"), ("A", "B2")],
 
 LINGER_S = 5.0          # a finished car still takes repeats of its own boxes this long
 RETREAT_S = 3.0         # front box quiet this long while a box behind keeps reporting = moved back
-MULTI_CAMERA_S = 2.0    # C and D report one GuiLan crossing within this
+MULTI_CAMERA_S = 3.0    # C and D report one GuiLan crossing within this (seen: up to 2 s apart)
 ORPHAN_S = 6.0          # a car first seen on a line adopts unexplained boxes this recent
 COLORS = ("green", "red")
 SOUTH_STARTS = ("A Box-1", "A Box-2")

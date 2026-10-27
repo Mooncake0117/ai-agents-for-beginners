@@ -162,10 +162,14 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - 165 S / 166 N trips (busiest log so far). S: every stage >= 98% except B B0 92%
   (14 misses; A B2, the same place, caught them). N: A CL2 96% (6 misses, 11:00-15:42),
   4% wrong direction; every other stage >= 99%.
-- Since the 10/26 zone change F Box-1 fires far more (325 bursts vs 20) and for cars
-  turning into the lane: 20 of 164 southbound entries set it off just before A Box-1.
-  The engine had taken F Box-1 as "the car at F Box-0 turned right" and dropped it; with
-  A CL1, B B0 and B CL1 all missed that left one car unseen until the GuiLan exit
-  (10:04:18-10:04:24, 0x02/0x03 stayed green). Fixed in the engine (F Box-1 recorded
-  only; A Box-2 just before A Box-1 joins it; a southbound car at the mouth may skip a box).
+- F Box-1 fired just before 20 of 164 southbound entries: a car behind, at F Box-0 too,
+  turning right (the user checked on site; F Box-1 is never the car turning in). The
+  engine took F Box-1 as "the car at F Box-0 turned right" and dropped the car turning
+  in; with A CL1, B B0 and B CL1 all missed that left one car unseen until the GuiLan
+  exit (10:04:18-10:04:24, 0x02/0x03 stayed green). Fixed in the engine (F Box-1
+  recorded only; A Box-2 just before A Box-1 joins it; a southbound car at the mouth
+  may skip a box).
+- C and D report one GuiLan crossing up to 2 s apart (0 s 163x, 1 s 107x, 2 s 8x, all
+  2 s cases on 10/27); two of those fell just past the 2 s pairing window and became
+  "unseen" cars (10:00:26, 14:35:54: extra red only). Window now 3 s.
 - Smart control paused by the operator 01:04-06:01.
