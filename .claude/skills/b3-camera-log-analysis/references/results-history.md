@@ -173,7 +173,14 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   2 s cases on 10/27); two of those fell just past the 2 s pairing window and became
   "unseen" cars (10:00:26, 14:35:54: extra red only). Window now 3 s.
 - Smart control paused by the operator 01:04-06:01.
-- Northbound on 10/27, live lights: all 166 trips recognised; 0x00 red at every exit.
-  Two fast cars (11:44:32 and 20:17:19, ~4 s from C/D CL2 to A CL2) left during the
+- Northbound on 10/27, live lights: 0x00 red at 165 of 166 exits. Missed: 18:36:32,
+  a car that waited ~50 s at B Box-1/B Box-2 (0x01 had gone red) while the car before it
+  stood at A Box-1 after leaving (18:36:33-51). That car's A Box-1 was taken as the
+  waiting car jumping to the exit, it was ended at 18:36:41, and its real exit at
+  18:37:35 drove under 0x00 green (then read as a southbound car backing out). A first
+  check matched the exit to that A Box-1 and missed it. Fixed: a northbound car that
+  has left keeps its A Box-1 while it stands there (up to 30 s), and a car that jumps
+  over a box keeps the boxes it came from.
+- Two fast cars (11:44:32 and 20:17:19, ~4 s from C/D CL2 to A CL2) left during the
   all-red before 0x01 turned green, and 0x00 turned green 0-1 s after they came out
   (the v all-red then only followed a 0x01 green). Fixed: u + v after such a car.

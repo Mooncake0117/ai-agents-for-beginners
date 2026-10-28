@@ -198,6 +198,7 @@ SOUTH_ENTRY = {"A": [("A", "B1"), ("A", "CL1"), ("A", "B2")],
                "B": [("B", "B0"), ("B", "B1"), ("B", "CL1")]}
 
 LINGER_S = 5.0          # a finished car still takes repeats of its own boxes this long
+STAND_S = 30.0          # ... or of A Box-1 while it stands there, waiting to turn into HuoShih
 RETREAT_S = 3.0         # front box quiet this long while a box behind keeps reporting = moved back
 MULTI_CAMERA_S = 3.0    # C and D report one GuiLan crossing within this (seen: up to 2 s apart)
 ORPHAN_S = 6.0          # a car first seen on a line adopts unexplained boxes this recent
@@ -472,12 +473,15 @@ class Tracker:
             if spot == 0 and v.direction == N:
                 continue                                # F Box-0 is past a northbound car's exit
             last = v.zones.get(key)
-            if last is not None and t - last <= self.s.occupied_s:
+            if last is not None and t - last <= self.s.occupied_s and (
+                    v.live or t - v.end_time <= LINGER_S):
                 rank = (0, -last)                       # the box this car is in
             elif not v.live:
                 if (v.state == "ended" and t - v.end_time <= LINGER_S
                         and (spot >= 7 if v.direction == S else spot <= 2)):
                     rank = (3, v.vid)                   # just left: its last boxes at the exit
+                elif key == ("A", "B1") and self._standing(v, t):
+                    rank = (3, v.vid)                   # left, still waiting at A Box-1
                 else:
                     continue
             else:
@@ -499,6 +503,8 @@ class Tracker:
         if linger and best_rank[0] == 1 and best_rank[2] == 2:
             best = linger[0]                            # not a jump over a box: the car that just left
         if best is not None:
+            if not best.live:
+                self.e.trace(f"{label(key)} -> #{best.vid} (has left)")
             self._attach(best, t, key, spot, None)
             if spot == 1 and best.direction == S:
                 self._join_mouth(best, t)
@@ -512,6 +518,15 @@ class Tracker:
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
+
+    def _standing(self, v, t):
+        """A northbound car that has left but still stands at A Box-1, waiting to
+        turn into HuoShih: A Box-1 keeps reporting, and those reports are not
+        another car's (10/27 18:36:33-51, a car stood there while the next one
+        waited at B Box-1)."""
+        last = v.zones.get(("A", "B1"))
+        return (v.state == "ended" and v.direction == N and last is not None
+                and t - last <= self.s.occupied_s and t - v.end_time <= STAND_S)
 
     def _join_mouth(self, v, t):
         """A Box-2 / B Box-0 reported by no car a moment before this southbound
@@ -631,8 +646,11 @@ class Tracker:
         a = self._ahead(v, spot)
         new_line = move == v.direction and v.crossed[spot][0] == t
         if a > 0:
+            jump = move is None and self._box_steps(v, spot) >= 2
             v.front = spot
-            if move is None:                            # keep the boxes it may still cover
+            if move is None and not jump:               # keep the boxes it may still cover;
+                                                        # after a jump over a box, all of them
+                                                        # (that message may be another car's)
                 here = self._box_here(v)
                 v.zones = {k: last for k, last in v.zones.items()
                            if k[1].startswith("CL") or
@@ -734,7 +752,7 @@ class Tracker:
         self._check_stops(t)
         for v in list(self.vehicles):
             if not v.live:
-                if t - v.end_time > LINGER_S:
+                if t - v.end_time > LINGER_S and not self._standing(v, t):
                     self.vehicles.remove(v)
                     if v.entered:
                         self.e.health.trip_done(v, self._clean(v))
