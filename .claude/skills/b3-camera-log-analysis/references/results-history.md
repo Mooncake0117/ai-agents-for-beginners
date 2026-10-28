@@ -184,3 +184,22 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - Two fast cars (11:44:32 and 20:17:19, ~4 s from C/D CL2 to A CL2) left during the
   all-red before 0x01 turned green, and 0x00 turned green 0-1 s after they came out
   (the v all-red then only followed a 0x01 green). Fixed: u + v after such a car.
+
+## 2026-10-28 review of 10/24-10/27 with the engine (replay, u=3 v=2)
+
+- Every analysis trip has an engine car (0 missed, all five logs). "No car fits yet":
+  236 box messages over five logs, none changing a light: ~65% a car's rear (a box it
+  left), ~20% A Box-2 behind a northbound car standing at A Box-1, ~10% later given to
+  a car (adopted by its line / joined at the mouth), 9 single isolated reports (E Box-2
+  7, A Box-2 2). 6 stray A Cross-Line-2 ignored.
+- Engine cars with no trip (extra red), 10/27: a lone A Cross-Line-1 just as a
+  northbound car leaves at HuoShih (11:00:58, 11:32:41, 13:56:59, 16:20:22; 24-25:
+  10:55:07) makes a southbound car for 25 s; F Box-0 kept two of them for 61 s (fixed:
+  F Box-0 only counts for a southbound car still at A Box-1). C/D Cross-Line-2 set off
+  by a southbound car leaving (08:59:34) and a GuiLan nose-in/back-out (08:52:12): a
+  northbound car for 25 s. The C/D copy of a re-crossed line made a second car
+  (15:52:07, fixed). Kept on purpose: a car first seen on its entry line holds the
+  lights until 25 s of silence.
+- Fastest southbound A Box-1 -> C/D Cross-Line-1, all logs 10/19-10/27 (563 trips):
+  4 s (10/22 07:55:53, 10/22 13:27:23, 10/24 10:43:18), median 8 s, 6% <= 5 s. Field
+  run 10/26-27: fastest 5 s. (10/19 11:00:00 "1 s" = recording restart mid-trip.)

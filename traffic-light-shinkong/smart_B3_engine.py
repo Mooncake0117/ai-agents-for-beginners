@@ -490,8 +490,10 @@ class Tracker:
                 reach = 2 if (v.inside and v.in_lane) or (v.direction == S and 1 <= v.front <= MOUTH[S]) else 1
                 if 0 <= b <= reach and not self._blocked(v, spot, t):
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
-                elif b == -1 and v.in_lane:
+                elif b == -1 and v.in_lane and not (spot == 0 and v.front > 1):
                     rank = (2, -v.seen)                 # the box just behind, car straddles both
+                                                        # (F Box-0 only while it is at A Box-1:
+                                                        # past it, F Box-0 is HuoShih traffic)
                 elif b == -2 and v.in_lane and v.backing:
                     rank = (2, -v.seen)                 # a car backing up, one box further back
                 else:
@@ -547,10 +549,11 @@ class Tracker:
                 continue
             prev = v.crossed.get(spot)
             # the other GuiLan camera reporting the crossing of a car that just went
-            # over (and may have ended on it): that car, before any car behind it
+            # over (and may have ended on it, or crossed back and over again): that
+            # car, before any car behind it
             same_crossing = (prev is not None and spot in MULTI_CAMERA_LINES
-                             and prev[1] != cam and key not in v.visited
-                             and t - prev[0] <= MULTI_CAMERA_S)
+                             and prev[1] != cam and t - prev[0] <= MULTI_CAMERA_S
+                             and not any(tt >= prev[0] and lab == label(key) for tt, lab in v.path))
             if not v.live and not (same_crossing and v.state == "ended"
                                    and t - v.end_time <= LINGER_S):
                 continue
