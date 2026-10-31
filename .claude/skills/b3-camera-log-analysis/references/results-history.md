@@ -209,14 +209,39 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - 188 S / 187 N trips. Every stage >= 98% except: B B0 96% (S), A CL2 91% with two
   outages 16:47-16:54 (7 trips) and 18:13-18:33 (5 trips; the health check flagged it),
   A B1 96% (N). During the outages some northbound exits fired A CL1 instead.
-- Live lights: every trip seen; one exit under 0x00 green: 16:36:29 N car rolled back
-  from A Box-1 over A Cross-Line-1 (16:36:40), stood unseen 17 s, left 16:37:03 (fixed:
-  a leaving car crossing a line backwards is back in the lane). 12:38:54 S car stood
-  60 s at B Box-1/B Box-2 and backed out to HuoShih (12:40:05-21) with no 0x00 stop
-  (fixed: box just behind a standing car's rear = it moving back).
+- 16:36:29 N car: A Cross-Line-1 at 16:36:40 is a misfire (the user: there is nowhere in
+  the mouth a car can stand unseen for 17 s); the car left then and ending it 3 s later
+  was right. A fix treating it as a roll-back (710e2477) was rejected and reverted.
+- 12:38:54 S car stood 60 s at B Box-1/B Box-2, then backed out to HuoShih (12:40:05-21)
+  with no 0x00 stop: its B Box-0/A Box-2 reports were 2 boxes behind its front box, so
+  they made a new car. Not caused by the 60 s limit (same with the limit removed). The
+  rear-box fix in 710e2477 was reverted with the rest; to be agreed with the user.
 - Arterial stops live: 20 (4 at HuoShih, all false: stray A CL2 of cars driving in;
-  16 at GuiLan, about half false: the car went on to HuoShih).
+  16 at GuiLan; see the 10/29 note: most "GuiLan back-outs" are southbound cars rocking
+  at the exit, not checked case by case here).
 - Start options, replay of 10/24-10/28 (464 S exits): countdown at A Box-1 vs A Box-2:
   red <= 2 s before the exit 4 vs 17 cars, never green; 0x02/0x03 red +9% (10/28:
   +170 s). Northbound candidates reaching C/D/E Box-2 (473): 92% were cars, 8% nothing;
   Box-2 leads the activation by a median 1 s (same second 42%).
+
+## B3_log_2026-10-29.txt and 10-30 (engine 730ab509, backing_stop On)
+
+- Cameras: every stage >= 96% (10/29 A CL2 96%), 10/30 every stage >= 99%. No outages.
+- Every trip seen. Checked at the exit LINE only, every car left under red - but a check
+  at the moment a southbound car reaches C/D/E Box-1 found cars ended too early at the
+  GuiLan exit: the car crossed C/D CL1, stayed at the exit (C/D/E Box-2 reporting), rolled
+  back over C/D CL2 and went out later under green/countdown: 10/28 09:41:01, 11:26:58;
+  10/29 09:41:51, 10:38:40, 14:28:35; 10/30 09:57:44, 10:34:13 (program ends a S car 3 s
+  after C/D CL1 without Box-1, whatever Box-2 says). The user agreed: do not end it
+  while Box-2 reports it; a C/D CL2 then = either the S car rolling back or a new N car
+  (the exit is two cars wide): keep both until later messages decide.
+- One line message used for two cars (a car "crossed X backwards" + a new car of the
+  other direction from the same message): 10/27 6, 10/28 4, 10/29 9, 10/30 2.
+- GuiLan "back-out" stops: 10/29 11 (8 were S cars rocking at the exit, 1 real-looking
+  11:29:11, 1 unclear, 1 false); 10/30 7 (3 rocking S / false N cars, 2 false, 2
+  real-looking 10:18:59, 10:59:25). HuoShih: 10/30 13:10:45 false (car made from an A
+  CL1 misfire took a standing N car's A Box-1/A Box-2).
+- 10/30 09:46:23: D CL1 1 s after the first car's C CL1 was the second car's crossing;
+  pairing it with the first car shifted every exit by one car (red ~35 s too long).
+- 10/30 12:22:59: S car backed out of the mouth (reached A Box-2, never A CL1) to
+  HuoShih with no 0x00 stop (stops only for a car that had been past A CL1).

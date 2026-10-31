@@ -373,7 +373,6 @@ class Vehicle:
     backing: bool = False
     out_since: float | None = None   # backed out over its entry; still holds the lights gone_s
     out_why: str = ""
-    seen_out: bool = False     # its arterial stop ended because it was seen outside
     parked: bool = False
     unseen: bool = False       # only seen when it left the lane
     first: dict = field(default_factory=dict)     # spot -> first time the car reached it
@@ -497,11 +496,6 @@ class Tracker:
                                                         # past it, F Box-0 is HuoShih traffic)
                 elif b == -2 and v.in_lane and v.backing:
                     rank = (2, -v.seen)                 # a car backing up, one box further back
-                elif (b < 0 and v.in_lane and spot != 0 and t - v.progress >= RETREAT_S
-                        and self._behind_rear(v, spot, t) in (0, 1)):
-                    rank = (2, -v.seen)                 # a car standing over two boxes starts to
-                                                        # back up: the box just behind its rear
-                                                        # (10/28 12:40:05, 60 s at B Box-1/B Box-2)
                 else:
                     continue
             if rank[0] == 3 and (linger is None or rank < linger[1]):
@@ -526,16 +520,6 @@ class Tracker:
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
-
-    def _behind_rear(self, v, spot, t):
-        """Boxes from the rear of the boxes car v covers now to the box at spot,
-        positive towards its entry end (None if it covers none)."""
-        idx = [BOX_INDEX[SPOT[k]] for k, last in v.zones.items()
-               if not k[1].startswith("CL") and t - last <= self.s.occupied_s]
-        if not idx:
-            return None
-        rear = min(idx) if v.direction == S else max(idx)
-        return (rear - BOX_INDEX[spot]) * SIGN[v.direction]
 
     def _standing(self, v, t):
         """A northbound car that has left but still stands at A Box-1, waiting to
@@ -674,8 +658,6 @@ class Tracker:
                 v.zones = {k: last for k, last in v.zones.items()
                            if k[1].startswith("CL") or
                            (BOX_INDEX[SPOT[k]] - here) * SIGN[v.direction] >= -1}
-            if (v.front - MOUTH[v.direction]) * SIGN[v.direction] > 0:
-                v.seen_out = False                      # back in the lane: a new stop if it backs out
             if v.out_since is not None and (v.front - OUTSIDE[v.direction]) * SIGN[v.direction] > 0:
                 v.out_since = None                      # it did not back out after all
                 self.e.event(f"{self._name(v)} back in the lane ({label(key)}): it did not "
@@ -742,10 +724,6 @@ class Tracker:
         v.path.append((t, label(key) + " (backwards)"))
         v.front = spot - SIGN[v.direction]
         v.crossed = {k: c for k, c in v.crossed.items() if (k - spot) * SIGN[v.direction] < 0}
-        if v.state == "leaving":
-            # rolled back into the lane from its exit: it has not left (10/28 16:36:40,
-            # a northbound car stood unseen in the mouth 17 s and left at 16:37:03)
-            v.state, v.exit_time, v.outer_time = "active", None, None
         self._moved_back(v, t, f"crossed {label(key)} backwards", line=True)
 
     def _moved_back(self, v, t, why, line=False):
@@ -868,7 +846,7 @@ class Tracker:
         outside (southbound at HuoShih: 0x00, with 0x01 kept red; northbound at
         GuiLan: 0x02/0x03)."""
         s = self.s
-        if s.backing_stop != "On" or v.vid in self.stops or v.seen_out:
+        if s.backing_stop != "On" or v.vid in self.stops:
             return
         countdown = max(s.z1, s.z2) if v.direction == S else max(s.x1, s.x2)
         self.stops[v.vid] = ArterialStop(v, t, t + countdown + 1, why)
@@ -916,7 +894,6 @@ class Tracker:
             else:
                 continue
             del self.stops[vid]
-            v.seen_out = why.startswith(("seen outside", label(HUOSHIH_OUT), "C/D/E Box-1 quiet"))
             light = "0x00" if d == S else "0x02/0x03"
             self.e.event(f"{self._name(v)} backing out at {BACK_END[d]}: {why}; {light} "
                          f"released", level)
