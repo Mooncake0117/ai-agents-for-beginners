@@ -245,3 +245,21 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   pairing it with the first car shifted every exit by one car (red ~35 s too long).
 - 10/30 12:22:59: S car backed out of the mouth (reached A Box-2, never A CL1) to
   HuoShih with no 0x00 stop (stops only for a car that had been past A CL1).
+
+## 2026-11-01: engine 6958870f (agreed GuiLan exit / HuoShih mouth rules) and B3_log_2026-10-31.txt
+
+- New rules, replayed 10/26-10/31 with the PC settings: no southbound car reaches C/D/E
+  Box-1 under green (7 cases on 10/28-10/30 before); one line message used for two cars
+  21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Cost: every
+  southbound car ends gone_s (3 s) after it stops moving: 0x02/0x03 red +410-550 s/day.
+- Southbound end at GuiLan needs C/D Cross-Line-1 (or Box-1 after a car that had crossed
+  rolled back over Cross-Line-2): C/D/E Box-1 alone ended cars still in the lane in a
+  first try (10/27 10:17:48, 10/30 15:18:55: Box-1 from GuiLan traffic).
+- 10/31 (PC 730ab509, no restart): cameras >= 98%. Cameras B/C/D silent until 07:38 (E
+  07:32), so a car at 07:32:29 was seen by A only; B also missed a car at 07:59:22 and
+  fired alone (B Box-0/B Box-1, no car on A or C/D/E) 5 times 08:05-08:35. Five fast
+  southbound cars (08:33:47, 09:21:52, 10:01:43, 10:07:33, 11:28:27): front at B Box-0/
+  B Box-1 while the rear still reported A Box-1 in the same second -> A Box-1 made a new
+  car that took the car's own A Cross-Line-1 (lost after 25 s). A rear-box rule (a box just
+  behind the boxes a car covers is that car) removes them, no real exit warned later in
+  10/26-10/31 - waiting for the user's decision.
