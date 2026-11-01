@@ -184,6 +184,8 @@ HUOSHIH_OUT = ("F", "B0")           # a car backing out at HuoShih: 0x00 freed b
 HUOSHIH_OUT_BACKUP = [("F", "B1"), ("F", "B2")]     # or at once after one of these
 GUILAN_OUT = [("C", "B1"), ("D", "B1"), ("E", "B1")]    # at GuiLan: freed once these reported, then
                                                         # stayed quiet backing_clear_s
+GUILAN_EXIT = [("C", "B2"), ("D", "B2"), ("E", "B2")]   # the GuiLan exit, two cars wide
+HUOSHIH_MOUTH = [("A", "B1"), ("A", "B2"), ("B", "B0")]  # one car wide: a line there is the car in it
 
 # zones every clean trip should fire (camera health); a set = any one of them
 HEALTH_ROUTE = {
@@ -266,7 +268,8 @@ class Settings:
 
     candidate_s: float = _f(3.0, "Car seen only outside the lane or at the mouth: dropped after silence (s)",
                             "Confidence", 1, 30)
-    gone_s: float = _f(3.0, "Exit line crossed but no C/D/E Box-1 / A Box-1 follows: car ends after (s)",
+    gone_s: float = _f(3.0, "Car ends this long after its exit line with no further movement "
+                            "(northbound: and no A Box-1; southbound: nothing at C/D/E Box-2) (s)",
                        "Confidence", 0, 30)
     hold_s: float = _f(5.0, "Silent car in the lane keeps its score for (s)", "Confidence", 0, 60)
     fade_to_s: float = _f(25.0, "... and fades to the cut-off by (s)", "Confidence", 1, 300)
@@ -375,6 +378,11 @@ class Vehicle:
     out_why: str = ""
     parked: bool = False
     unseen: bool = False       # only seen when it left the lane
+    moved: float = 0.0         # last time its front changed or it crossed a line
+    possible_of: int | None = None   # made from a line that car may have set off rolling back
+    before_back: tuple | None = None  # (exit_time, outer_time, state, front, crossed) before it
+                                      # crossed back into the GuiLan exit: undone if that line
+                                      # turns out to be a northbound car's
     first: dict = field(default_factory=dict)     # spot -> first time the car reached it
     path: list = field(default_factory=list)      # [(time, zone label)]
 
@@ -472,6 +480,8 @@ class Tracker:
         for v in self.vehicles:
             if spot == 0 and v.direction == N:
                 continue                                # F Box-0 is past a northbound car's exit
+            if v.possible_of is not None and v.live and self._ahead(v, spot) <= 0:
+                continue                                # a possible car only by moving further in
             last = v.zones.get(key)
             if last is not None and t - last <= self.s.occupied_s and (
                     v.live or t - v.end_time <= LINGER_S):
@@ -480,8 +490,8 @@ class Tracker:
                 if (v.state == "ended" and t - v.end_time <= LINGER_S
                         and (spot >= 7 if v.direction == S else spot <= 2)):
                     rank = (3, v.vid)                   # just left: its last boxes at the exit
-                elif key == ("A", "B1") and self._standing(v, t):
-                    rank = (3, v.vid)                   # left, still waiting at A Box-1
+                elif self._standing(v, t) and (key == ("A", "B1") if v.direction == N else spot >= 7):
+                    rank = (3, v.vid)                   # left, still waiting at A Box-1 / C/D/E Box-1
                 else:
                     continue
             else:
@@ -496,6 +506,9 @@ class Tracker:
                                                         # past it, F Box-0 is HuoShih traffic)
                 elif b == -2 and v.in_lane and v.backing:
                     rank = (2, -v.seen)                 # a car backing up, one box further back
+                elif v.parked and v.in_lane and b < 0 and spot != 0 and self._behind_rear(v, spot, t) in (0, 1):
+                    rank = (2, -v.seen)                 # stood max_red s, now moving back: the box
+                                                        # just behind the boxes it covers (10/28 12:40)
                 else:
                     continue
             if rank[0] == 3 and (linger is None or rank < linger[1]):
@@ -505,8 +518,15 @@ class Tracker:
         if linger and best_rank[0] == 1 and best_rank[2] == 2:
             best = linger[0]                            # not a jump over a box: the car that just left
         if best is not None:
-            if not best.live:
+            if not best.live and best.direction == S and spot == 7 and self._standing(best, t):
+                self._revive(best, t, label(key))
+            elif not best.live:
                 self.e.trace(f"{label(key)} -> #{best.vid} (has left)")
+            if (best.parked and best.in_lane and not best.backing and spot != 0
+                    and self._behind_rear(best, spot, t) == 1):
+                best.backing = True
+                self.e.event(f"{self._name(best)} stood {self.s.max_red} s and moves again: backwards "
+                             f"({label(key)})", "EVENT")
             self._attach(best, t, key, spot, None)
             if spot == 1 and best.direction == S:
                 self._join_mouth(best, t)
@@ -521,14 +541,47 @@ class Tracker:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
 
+    def _behind_rear(self, v, spot, t):
+        """Boxes from the rear of the boxes car v covers now to the box at spot,
+        positive towards its entry end (None if it covers none)."""
+        idx = [BOX_INDEX[SPOT[k]] for k, last in v.zones.items()
+               if not k[1].startswith("CL") and t - last <= self.s.occupied_s]
+        if not idx:
+            return None
+        rear = min(idx) if v.direction == S else max(idx)
+        return (rear - BOX_INDEX[spot]) * SIGN[v.direction]
+
     def _standing(self, v, t):
-        """A northbound car that has left but still stands at A Box-1, waiting to
-        turn into HuoShih: A Box-1 keeps reporting, and those reports are not
-        another car's (10/27 18:36:33-51, a car stood there while the next one
-        waited at B Box-1)."""
-        last = v.zones.get(("A", "B1"))
-        return (v.state == "ended" and v.direction == N and last is not None
-                and t - last <= self.s.occupied_s and t - v.end_time <= STAND_S)
+        """A car that has left but still stands in its last box: a northbound car at
+        A Box-1 waiting to turn into HuoShih (10/27 18:36:33-51), a southbound car at
+        C/D/E Box-1 waiting to turn into GuiLan.  Those reports are not another car's."""
+        if v.state != "ended" or t - v.end_time > STAND_S:
+            return False
+        keys = [("A", "B1")] if v.direction == N else GUILAN_OUT
+        return any(t - v.zones.get(k, -1e18) <= self.s.occupied_s for k in keys)
+
+    def _revive(self, v, t, why):
+        """A southbound car that had left but stood at C/D/E Box-1 is back in the
+        GuiLan exit: it holds the lights again until it has really gone."""
+        if v in self.done:
+            self.done.remove(v)
+        if (v.active_since, v.end_time) in self.active_spans:
+            self.active_spans.remove((v.active_since, v.end_time))
+        v.state, v.end_time, v.end_reason = ("leaving" if v.exit_time is not None else "active"), None, ""
+        v.outer_time = None                             # box by box: its crossing still counts
+        v.front, v.moved, v.seen, v.backing = SPOT[GUILAN_EXIT[0]], t, t, True
+        self.e.event(f"{self._name(v)} rolled back from C/D/E Box-1 into the GuiLan exit ({why}): "
+                     f"still in the lane", "EVENT")
+
+    def _in_mouth(self, t):
+        """The car in the one-car-wide HuoShih mouth (A Box-1, A Box-2/B Box-0) now, if any:
+        in the lane, or just left (a car that left longer ago and waits at A Box-1 to turn
+        is out of the way of a car turning in behind it)."""
+        for v in self.vehicles:
+            if v.in_lane or (v.state == "ended" and t - v.end_time <= LINGER_S):
+                if any(t - v.zones.get(k, -1e18) <= self.s.occupied_s for k in HUOSHIH_MOUTH):
+                    return v
+        return None
 
     def _join_mouth(self, v, t):
         """A Box-2 / B Box-0 reported by no car a moment before this southbound
@@ -576,6 +629,8 @@ class Tracker:
                     best = v
         if best is not None:
             self._attach(best, t, key, spot, move)
+            if best_rank is not None and best_rank[0] == 0 and move == S:
+                self._also_crossing(t, key, spot, best)
             return
         for v in self.vehicles:                         # C and D both report one crossing
             prev = v.crossed_back.get(spot)
@@ -584,18 +639,36 @@ class Tracker:
                 v.visited.add(key)
                 v.path.append((t, label(key) + " (backwards)"))
                 return
-        # against a car's direction: that car moved back over the line
+        # against a car's direction: that car moved back over the line (a southbound car
+        # that has left but stands at C/D/E Box-1 too: it rolls back into the GuiLan exit)
         reverse = None
         for v in self.vehicles:
-            if v.in_lane and v.direction != move:
+            standing = v.direction == S and spot == EXIT_LINE[S] and self._standing(v, t)
+            if (v.in_lane or standing) and v.direction != move:
                 past = (v.front - spot) * SIGN[v.direction]
                 if 0 <= past <= 1 and (reverse is None or v.vid < reverse.vid):
                     reverse = v
         if reverse is not None:
+            if not reverse.live:
+                self._revive(reverse, t, f"{label(key)} backwards")
             self._backwards(reverse, t, key, spot)
+        if move == S and spot == 2:
+            mouth = reverse or self._in_mouth(t)
+            if mouth is not None:
+                # the HuoShih mouth is one car wide: the car in it set the line off (rolling
+                # back, crossing again, a misfire); no second car appears there (10/30 13:10:35)
+                if mouth is not reverse:
+                    mouth.visited.add(key)
+                    mouth.path.append((t, label(key) + " (again)"))
+                self.e.trace(f"{label(key)}: car #{mouth.vid} is in the HuoShih mouth, no new car")
+                return
         entry = (move == S and spot in (2, 5)) or (move == N and spot in (8, 5))
         if entry:
             v = self._new(t, key, move, spot, 0.0)
+            if reverse is not None and spot == EXIT_LINE[S]:
+                # keep both: the southbound car rolled back over the line, or a northbound
+                # car came in beside it (the GuiLan exit is two cars wide)
+                v.possible_of = reverse.vid
             self._adopt(v, t, spot)
             self._attach(v, t, key, spot, move, created=True)
         elif move == S and spot == 8 and reverse is None:
@@ -606,8 +679,21 @@ class Tracker:
         elif reverse is None:
             self.e.trace(f"{label(key)}: no car fits, ignored")
 
+    def _also_crossing(self, t, key, spot, first):
+        """Keep both: the second GuiLan camera's report of a southbound crossing may
+        also be the car right behind it crossing (10/30 09:46:22-23, two cars 1 s
+        apart).  It cannot end that car early: a car still at C/D/E Box-2 stays."""
+        for v in self.vehicles:
+            if (v is first or v.direction != S or not v.in_lane or spot in v.crossed
+                    or self._ahead(v, spot) != 1 or self._blocked(v, spot, t)):
+                continue
+            self.e.trace(f"{label(key)} also for #{v.vid}, right behind #{first.vid}")
+            self._attach(v, t, key, spot, S)
+            return
+
     def _new(self, t, key, direction, spot, score):
         v = Vehicle(self.next_id, direction, t, spot, score, t, t)
+        v.moved = t
         self.next_id += 1
         v.zones = {key: t} if not key[1].startswith("CL") else {}
         v.visited.add(key)
@@ -664,7 +750,7 @@ class Tracker:
                              f"back out", "EVENT")
         if a > 0 or new_line:
             v.first.setdefault(spot, t)
-            v.progress = t
+            v.progress = v.moved = t
             v.base += s.score_line if move else s.score_box
             if v.parked:
                 v.parked = False
@@ -674,6 +760,15 @@ class Tracker:
         elif v.front >= 4 if v.direction == S else v.front <= 6:
             v.inside = True                             # reached a box past the entry line
         self.e.trace(f"{label(key)} -> #{v.vid} ({v.state}, now at {v.where})")
+        if v.possible_of is not None and v.in_lane and (spot - MOUTH[N]) * SIGN[N] > 0:
+            p = next((u for u in self.vehicles if u.vid == v.possible_of), None)
+            v.possible_of = None                        # further in than the rolling car could be
+            self.e.event(f"{self._name(v)} confirmed ({label(key)}): a northbound car after all", "EVENT")
+            if p is not None and p.live and p.before_back is not None and p.exit_time is None:
+                p.exit_time, p.outer_time, p.state, p.front, p.crossed = p.before_back
+                p.before_back, p.backing = None, False
+                self.e.event(f"{self._name(p)} did not roll back: that line was northbound car "
+                             f"#{v.vid}", "EVENT")
         if v.state == "candidate" and self._confirms(v, key, spot, move):
             self._activate(v, t, key)
         if v.state not in ("active", "leaving"):
@@ -687,12 +782,17 @@ class Tracker:
                 v.outer_time = t
         else:
             return
-        if v.exit_time is not None and v.outer_time is not None:
+        if d == S:
+            # a southbound car ends in update(), _south_gone: over C/D Cross-Line-1 and then
+            # gone_s with no movement and nothing in the exit (it may stand on C/D/E Box-1
+            # or roll back into the exit first, 10/29-10/30)
+            if v.state == "active" and v.exit_time is not None:
+                v.state = "leaving"
+                self.e.event(f"{self._name(v)} leaving the lane at {END_NAME[d]} ({label(key)})", "EVENT")
+        elif v.exit_time is not None and v.outer_time is not None:
             self.finish(v, t, "ended", f"left at {END_NAME[d]} ({EXIT_LINE_NAME[d]} and "
                                        f"{OUTER_BOX_NAME[d]})")
-        elif v.state == "active" and (v.exit_time is not None or d == N):
-            # a southbound car at C/D/E Box-1 has not left until it crosses C/D
-            # Cross-Line-1: it may still wait at the mouth
+        elif v.state == "active":
             v.state = "leaving"
             self.e.event(f"{self._name(v)} leaving the lane at {END_NAME[d]} ({label(key)})", "EVENT")
 
@@ -711,12 +811,18 @@ class Tracker:
         if v.unseen:
             self.e.event(f"{self._name(v)} leaving at GuiLan, but no camera saw it enter "
                          f"the lane", "WARN")
+        elif v.possible_of is not None:
+            self.e.event(f"{self._name(v)} possibly in the lane ({label(key)}): southbound car "
+                         f"#{v.possible_of} at the GuiLan exit may have rolled back over it; "
+                         f"both held until the next messages tell", "EVENT")
         else:
             self.e.event(f"{self._name(v)} in the lane ({label(key)}, "
                          f"{v.base:.0f}%)", "EVENT")
 
     def _backwards(self, v, t, key, spot):
         """Line crossed against v's direction: v moved back over it."""
+        if v.direction == S and spot == EXIT_LINE[S]:
+            v.before_back = (v.exit_time, v.outer_time, v.state, v.front, dict(v.crossed))
         v.backing = True
         v.seen = t
         v.crossed_back[spot] = (t, key[0])
@@ -724,7 +830,20 @@ class Tracker:
         v.path.append((t, label(key) + " (backwards)"))
         v.front = spot - SIGN[v.direction]
         v.crossed = {k: c for k, c in v.crossed.items() if (k - spot) * SIGN[v.direction] < 0}
+        v.moved = t
+        self._rolled_back(v, line=True)
         self._moved_back(v, t, f"crossed {label(key)} backwards", line=True)
+
+    @staticmethod
+    def _rolled_back(v, line=False):
+        """A southbound car back in the GuiLan exit: C/D/E Box-1 from before no longer
+        counts; back over C/D Cross-Line-2, its crossing neither (it must cross again)."""
+        if v.direction == S and v.front < EXIT_LINE[S]:
+            v.outer_time = None
+            if line:
+                v.exit_time = None
+                if v.state == "leaving":
+                    v.state = "active"
 
     def _moved_back(self, v, t, why, line=False):
         d = v.direction
@@ -776,6 +895,10 @@ class Tracker:
                 if t - v.seen > s.candidate_s:
                     self.finish(v, t, "cancelled", "left the mouth without entering the lane")
                 continue
+            if v.possible_of is not None and self._possible_gone(v, t):
+                self.finish(v, t, "cancelled", f"it was southbound car #{v.possible_of} rolling "
+                                               f"back at the GuiLan exit")
+                continue
             if v.direction == N and v.front <= 4 and not north_go:
                 v.seen = max(v.seen, t)                 # waits for 0x01: no fade
             quiet = t - v.seen
@@ -787,7 +910,10 @@ class Tracker:
             else:
                 frac = (quiet - s.hold_s) / (s.fade_to_s - s.hold_s)
                 v.score = s.cut_pct + max(0.0, v.base - s.cut_pct) * (1 - frac * frac)
-            if v.state == "leaving":
+            if v.direction == S:
+                if self._south_gone(v, t):
+                    continue
+            elif v.state == "leaving":
                 d = v.direction
                 if v.exit_time is not None and t - v.exit_time >= s.gone_s:
                     self.finish(v, t, "ended", f"left at {END_NAME[d]} ({EXIT_LINE_NAME[d]}, "
@@ -803,6 +929,40 @@ class Tracker:
                 v.parked = True
                 self.e.event(f"{self._name(v)} has not moved for {s.max_red} s at {v.where}; "
                              f"it no longer holds the lights", "WARN")
+
+    def _south_gone(self, v, t):
+        """A southbound car has left at GuiLan once it crossed C/D Cross-Line-1 and
+        then for gone_s neither moved nor was seen in the exit (C/D/E Box-2, or its own
+        B Box-2: it may have been given a crossing that was the car ahead of it): it
+        may stand on C/D/E Box-1, or roll back into the exit, first.  C/D/E Box-1
+        alone is not enough: it also sees GuiLan traffic and cars coming in (10/27
+        10:17:48, 10/30 15:18:55) - unless the car had crossed C/D Cross-Line-1 before
+        it rolled back over Cross-Line-2: then it was at the line, and C/D/E Box-1 after
+        it is the car going out again without the line firing twice (10/29 14:28:48)."""
+        crossed_before = v.before_back is not None and v.before_back[0] is not None
+        if v.exit_time is None and not (crossed_before and v.outer_time is not None):
+            return False
+        s = self.s
+        box2 = [last for k, last in v.zones.items() if not k[1].startswith("CL") and SPOT[k] <= 7]
+        box2 += [o[0] for o in self.orphans if SPOT[o[1]] in (6, 7)]
+        box2 += [last for u in self.vehicles if u.possible_of == v.vid
+                 for k, last in u.zones.items() if k in GUILAN_EXIT]
+        if t - v.moved < s.gone_s or t - max(box2, default=-1e18) < s.gone_s:
+            return False
+        how = ("C/D Cross-Line-1" if v.exit_time is not None else "C/D Cross-Line-1 earlier") + (
+            " and C/D/E Box-1" if v.outer_time is not None else "")
+        self.finish(v, t, "ended", f"left at GuiLan ({how}; no movement and nothing at "
+                                   f"C/D/E Box-2 for {s.gone_s:g} s)")
+        return True
+
+    def _possible_gone(self, v, t):
+        """A possible northbound car (see _line) was the southbound car rolling back:
+        that car went out again (or has gone) and nothing is at C/D/E Box-2 any more,
+        with nothing further in the lane on the way (that would have confirmed it)."""
+        p = next((u for u in self.vehicles if u.vid == v.possible_of), None)
+        out_again = p is None or not p.live or p.exit_time is not None or p.outer_time is not None
+        exit_quiet = t - max(self.last.get(k, -1e18) for k in GUILAN_EXIT) >= self.s.gone_s
+        return out_again and exit_quiet and t - v.born >= self.s.gone_s
 
     def _merge_into(self, x, t):
         """Southbound car x backs into the one-car-wide HuoShih mouth.  A newer
@@ -846,7 +1006,7 @@ class Tracker:
         outside (southbound at HuoShih: 0x00, with 0x01 kept red; northbound at
         GuiLan: 0x02/0x03)."""
         s = self.s
-        if s.backing_stop != "On" or v.vid in self.stops:
+        if s.backing_stop != "On" or v.vid in self.stops or v.possible_of is not None:
             return
         countdown = max(s.z1, s.z2) if v.direction == S else max(s.x1, s.x2)
         self.stops[v.vid] = ArterialStop(v, t, t + countdown + 1, why)
@@ -923,7 +1083,8 @@ class Tracker:
         if any(t - last < RETREAT_S for k, last in boxes.items() if SPOT[k] == top):
             return
         v.backing = True
-        v.front = here
+        v.front, v.moved = here, t
+        self._rolled_back(v)                            # box by box: its crossing still counts
         v.crossed = {k: c for k, c in v.crossed.items() if (k - here) * sign < 0}
         v.zones = {k: last for k, last in v.zones.items() if (SPOT[k] - here) * sign <= 0}
         v.path.append((t, f"back to {SPOT_NAMES[here]}"))
