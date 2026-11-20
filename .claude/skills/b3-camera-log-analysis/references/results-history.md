@@ -263,3 +263,17 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   car that took the car's own A Cross-Line-1 (lost after 25 s). A rear-box rule (a box just
   behind the boxes a car covers is that car) removes them, no real exit warned later in
   10/26-10/31 - waiting for the user's decision.
+
+## 2026-11-20: B3_log/decisions 2026-11-15 (01:27-09:34) and 2026-11-16 (14:18-23:34), engine f8d41076
+
+- The program stopped 11/15 09:34:09 (camera log and decisions end together; no ERROR, no
+  Stop, no V22 switch an hour later, so the process or the PC stopped) and started again
+  11/16 14:18:06 (car numbers from #1). Live: every exit under red (11/15 3 S + 3 N, 11/16
+  50 S + 122 N). 6958870f was installed. No lane car 23:45-00:14 in any log 10/26-11/16.
+- Rear-box rule (built in, f8d41076), replay 10/26-10/31, 11/15, 11/16: 13 phantom cars
+  fewer (10/28 3, 10/29 2, 10/31 5, 11/16 3 = the PC's "lost" cars 16:53:23, 18:49:07,
+  20:47:44), 0x02/0x03 red -185 s in total, same lights at every real exit, also with every
+  F Box-0 message deleted. ~65 close-following southbound pairs in these days.
+- 12:40 leftover proposal ("seen outside" ends a car backing out), tested in a copy only:
+  10/28 12:40:21-12:40:46 (HuoShih) and, if also at GuiLan, 10/27 08:52:25-08:52:46 are
+  the only light changes in 10/26-11/16.

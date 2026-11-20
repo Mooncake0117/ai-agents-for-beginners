@@ -86,8 +86,13 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Stop-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
-- **Installed engine:** 730ab509 (since 10/29 00:15; it ran through 10/31).
-- **Latest engine:** 6958870f, sent to the user on 11/01, **not installed yet** (as of 11/01).
+- **Installed engine:** 6958870f (running by 11/15, seen in the 11/15-11/16 decisions).
+- **Latest engine:** f8d41076 (rear-box rule), sent to the user on 11/20, not installed yet.
+- **11/15 stop:** the program stopped 11/15 09:34:09 and was started again 11/16 14:18:06
+  (no Python error, no Stop, no V22 switch logged: the process or the PC stopped). Proposed
+  to the user 11/19, waiting: a 5-minute watchdog trigger on the task, a daily 00:00
+  restart task, automatic sign-in / BIOS power-on / Windows Update restart settings, and
+  Event Viewer commands to find the cause.
 - The program writes the camera log `B3_log_YYYY-MM-DD.txt` (same format as HTTP_Server.py)
   and its decisions `B3_decisions_YYYY-MM-DD.txt`. The user uploads both for analysis.
 
@@ -190,16 +195,16 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 
 ## 8. Open questions (waiting for the user's decision: do NOT implement)
 
-1. **Rear-box rule** (item 4 of 11/01): a box just behind the boxes a car covers is that
-   car's rear. On 10/31 five fast southbound cars (08:33:47, 09:21:52, 10:01:43,
-   10:07:33, 11:28:27) had their front at B Box-0/B Box-1 while their rear still reported
-   A Box-1 in the same second; that A Box-1 made a phantom car which took the car's own
-   A Cross-Line-1 (lost after 25 s, extra red only). The rule removes them; replay
-   10/26-10/31: no real exit warned later. The user asked for a detailed explanation and
-   side effects; experiment kept outside git (not in 6958870f).
+1. ~~Rear-box rule~~: **agreed 11/20, built in (f8d41076)**. A box just behind the boxes
+   a car still covers is its own tail (lowest rank). Replay 10/26-11/16: 13 phantom cars
+   fewer, same lights at every real exit, also with every F Box-0 message removed.
 2. **Keep-both on the B Cross-Lines** (the 3 remaining one-message-two-cars cases above).
-3. **10/28 12:40 leftover**: after the A Cross-Line-2 "backwards" the car's A Box-2 reads
-   as "back in the lane", so 0x02/0x03 stays red until 12:40:44 (extra red only).
+3. **10/28 12:40 leftover**: after the A Cross-Line-2 "backwards" (12:40:18) the car's A
+   Box-2 (12:40:19) reads as "back in the lane"; F Box-2 frees 0x00 at 12:40:21 but the car
+   still holds 0x02/0x03 red until "lost" (12:40:44). Proposed 11/20, waiting: when the
+   backing stop is freed because the car was seen outside, the car has backed out (no
+   longer holds the lights); HuoShih only, or also GuiLan (same pattern 10/27 08:52:14).
+   Tested in a copy only: changes nothing else in 10/26-11/16.
 4. **Camera B in the morning** (07:30-08:40 on 10/31): B/C/D silent until 07:38 (E 07:32),
    B missed a car at 07:59:22, B fired alone 07:41:57 and 5 times 08:05-08:35.
 5. A log **after camera A's angle is adjusted**.
@@ -234,7 +239,7 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 
 ## 10. User-side to-do (as of 11/01)
 
-- Install 6958870f (`smart_B3_engine.py`) on the B3-PC and restart the task.
+- Install f8d41076 (`smart_B3_engine.py`) on the B3-PC and restart the task.
 - Register the B4 V22 autostart task (`install_autostart.ps1`, default script and name).
 - Consider the signed python.org Python if Windows "Application Control policy has blocked
   this file" for uv's Python again.
@@ -249,7 +254,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 730ab509 | F Box-0 straddle only at front 1; C/D pairing uses the path (**installed**) |
 | 710e2477 | rejected by the user (16:36 roll-back, 12:40 rear-box) |
 | 7396c169 | revert of 710e2477, with the user's approval |
-| 6958870f | 11/01 agreed GuiLan exit / HuoShih mouth rules (**latest, not installed**) |
+| 6958870f | 11/01 agreed GuiLan exit / HuoShih mouth rules (installed by 11/15) |
+| f8d41076 | 11/20 rear-box rule for every car in the lane (**latest, not installed**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
