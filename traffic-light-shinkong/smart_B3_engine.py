@@ -506,9 +506,13 @@ class Tracker:
                                                         # past it, F Box-0 is HuoShih traffic)
                 elif b == -2 and v.in_lane and v.backing:
                     rank = (2, -v.seen)                 # a car backing up, one box further back
-                elif v.parked and v.in_lane and b < 0 and spot != 0 and self._behind_rear(v, spot, t) in (0, 1):
-                    rank = (2, -v.seen)                 # stood max_red s, now moving back: the box
-                                                        # just behind the boxes it covers (10/28 12:40)
+                elif v.in_lane and b < 0 and spot != 0 and self._behind_rear(v, spot, t) in (0, 1):
+                    rank = (2, -v.seen)                 # rear-box rule: the box just behind the boxes
+                                                        # it still covers is its own tail (10/31
+                                                        # 09:21:13: A Box-1 while its front was at
+                                                        # B Box-1), or a parked car moving back
+                                                        # (10/28 12:40).  Lowest rank: a box another
+                                                        # car has ahead of it stays that car's
                 else:
                     continue
             if rank[0] == 3 and (linger is None or rank < linger[1]):
