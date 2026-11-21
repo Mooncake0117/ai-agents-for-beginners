@@ -277,3 +277,19 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - 12:40 leftover proposal ("seen outside" ends a car backing out), tested in a copy only:
   10/28 12:40:21-12:40:46 (HuoShih) and, if also at GuiLan, 10/27 08:52:25-08:52:46 are
   the only light changes in 10/26-11/16.
+
+## B3_log 2026-11-20 and 2026-11-21 (6958870f, then f8d41076 from 11/21 05:50)
+
+- 161 S / 161 N (11/20), 123 S / 124 N (11/21). Every stage >= 95% except A CL1 86% / 88%
+  (>= 98% at the end of October; camera A's angle was changed since). A B1 99%.
+- 11/20 09:37:03-05: camera A missed a whole southbound car (A B1, A CL1, A B2) and B CL1
+  missed it too; only B boxes (no car is made from them) until C CL1 -> it left under
+  0x02/0x03 countdown/green. The only real exit not under red in these two days.
+- 15 "left the mouth" cars: F B0 -> A B1 -> F B1/F B2 within ~2 s (HuoShih traffic brushing
+  A Box-1), ~6 s of 0x02/0x03 red each. 21 possible northbound cars, all resolved right
+  (13 confirmed, 8 dropped). HuoShih stops 3, all false (car hesitating in the mouth).
+- GuiLan keep-both gap: S car rolled back into Box-2 by box, C/D CL2 1-2 s later -> normal
+  N car (11/21 10:10:52, 10:49:41: 0x00 red ~54 s).
+- F Box-0 moved ~13:45-14:00 on 11/21. 11/21 13:07:18-57: a northbound car went out to F
+  Box-2, came back into A Box-1/A Box-2 for 27 s without F Box-0, went out again.
+- Daily restart 11/21 00:00:02-00:00:14 (dark ~12 s). A stop/start 11/21 05:49:55-05:50:16.
