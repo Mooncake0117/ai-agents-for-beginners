@@ -268,8 +268,8 @@ class Settings:
 
     candidate_s: float = _f(3.0, "Car seen only outside the lane or at the mouth: dropped after silence (s)",
                             "Confidence", 1, 30)
-    gone_s: float = _f(3.0, "Car ends this long after its exit line with no further movement "
-                            "(northbound: and no A Box-1; southbound: nothing at C/D/E Box-2) (s)",
+    # keep labels short: a long one pushes its group's input boxes off the Settings screen
+    gone_s: float = _f(3.0, "Car ends this long after its exit line once it stops moving (s)",
                        "Confidence", 0, 30)
     hold_s: float = _f(5.0, "Silent car in the lane keeps its score for (s)", "Confidence", 0, 60)
     fade_to_s: float = _f(25.0, "... and fades to the cut-off by (s)", "Confidence", 1, 300)
