@@ -86,8 +86,7 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Stop-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
-- **Installed engine:** 6958870f (running by 11/15, seen in the 11/15-11/16 decisions).
-- **Latest engine:** f8d41076 (rear-box rule), sent to the user on 11/20, not installed yet.
+- **Installed since 11/20:** f8d41076 (rear-box rule).
 - **11/15 stop:** the program stopped 11/15 09:34:09 and was started again 11/16 14:18:06
   (no Python error, no Stop, no V22 switch logged: the process or the PC stopped). Proposed
   to the user 11/19, waiting: a 5-minute watchdog trigger on the task, a daily 00:00
@@ -199,15 +198,23 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    a car still covers is its own tail (lowest rank). Replay 10/26-11/16: 13 phantom cars
    fewer, same lights at every real exit, also with every F Box-0 message removed.
 2. **Keep-both on the B Cross-Lines** (the 3 remaining one-message-two-cars cases above).
-3. **10/28 12:40 leftover**: after the A Cross-Line-2 "backwards" (12:40:18) the car's A
-   Box-2 (12:40:19) reads as "back in the lane"; F Box-2 frees 0x00 at 12:40:21 but the car
-   still holds 0x02/0x03 red until "lost" (12:40:44). Proposed 11/20, waiting: when the
-   backing stop is freed because the car was seen outside, the car has backed out (no
-   longer holds the lights); HuoShih only, or also GuiLan (same pattern 10/27 08:52:14).
-   Tested in a copy only: changes nothing else in 10/26-11/16.
+3. ~~10/28 12:40 leftover~~: the "seen outside = backed out" rule was **declined by the
+   user 11/21** (one special case, not worth a rule). Do not bring it back.
 4. **Camera B in the morning** (07:30-08:40 on 10/31): B/C/D silent until 07:38 (E 07:32),
    B missed a car at 07:59:22, B fired alone 07:41:57 and 5 times 08:05-08:35.
 5. A log **after camera A's angle is adjusted**.
+6. **Northbound car rolling back at HuoShih** (asked 11/21). Today a northbound car that has
+   ended at HuoShih is never revived: A Box-2/B Box-0 after its end is "no car fits", A Box-1
+   after a pause makes a new southbound car. Possible cases: 10/28 15:16:08, 10/29 08:38:15,
+   10/31 12:35:12. The user moved F Box-0 (11/21) so exiting / rolling-back northbound cars
+   do not trigger it; F Box-0 came before 841 of 844 southbound entries (old position), F
+   Box-1/F Box-2 followed only 608 of 910 northbound exits. Idea, waiting for logs with the
+   new F Box-0: a mouth report with no F Box-0 since the northbound car left = that car back.
+7. **Lost limit** (fade_to_s 25 s): the user wants 3 s (11/21). Replay 10/26-11/16 with hold
+   2 / fade 3: 458 cars lost (28 today), 22 real exits under green; 11/16 alone: 24 lost, 13
+   of 171 real trips had a 3-4 s silence. 10 s / 15 s: one unsafe exit (10/28 10:09:14, a car
+   silent 15 s in the old blind spot between B Box-2 and C/D/E Box-2). Advised: keep 25 s
+   until logs with the new boxes show the longest silence of a real car.
 
 ## 9. How to analyse a new log and verify a change
 
@@ -239,7 +246,6 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 
 ## 10. User-side to-do (as of 11/01)
 
-- Install f8d41076 (`smart_B3_engine.py`) on the B3-PC and restart the task.
 - Register the B4 V22 autostart task (`install_autostart.ps1`, default script and name).
 - Consider the signed python.org Python if Windows "Application Control policy has blocked
   this file" for uv's Python again.
@@ -255,7 +261,7 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 710e2477 | rejected by the user (16:36 roll-back, 12:40 rear-box) |
 | 7396c169 | revert of 710e2477, with the user's approval |
 | 6958870f | 11/01 agreed GuiLan exit / HuoShih mouth rules (installed by 11/15) |
-| f8d41076 | 11/20 rear-box rule for every car in the lane (**latest, not installed**) |
+| f8d41076 | 11/20 rear-box rule for every car in the lane (**installed 11/20**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
