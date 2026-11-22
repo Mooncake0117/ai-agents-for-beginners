@@ -377,6 +377,8 @@ class Vehicle:
     out_since: float | None = None   # backed out over its entry; still holds the lights gone_s
     out_why: str = ""
     parked: bool = False
+    parked_front: int | None = None  # where it stood when it was parked
+    exit_back_at: float | None = None    # southbound: rolled back from C/D/E Box-1 into the exit
     unseen: bool = False       # only seen when it left the lane
     moved: float = 0.0         # last time its front changed or it crossed a line
     possible_of: int | None = None   # made from a line that car may have set off rolling back
@@ -413,6 +415,7 @@ class ArterialStop:
     hold_until: float          # the countdown and a moment of red, whatever happens
     why: str
     out_seen: float | None = None    # first F Box-0 / last C/D/E Box-1 report since the stop began
+    mouth_at: float | None = None    # when the car was back in its entry mouth
 
 
 class Tracker:
@@ -574,6 +577,7 @@ class Tracker:
         v.state, v.end_time, v.end_reason = ("leaving" if v.exit_time is not None else "active"), None, ""
         v.outer_time = None                             # box by box: its crossing still counts
         v.front, v.moved, v.seen, v.backing = SPOT[GUILAN_EXIT[0]], t, t, True
+        v.exit_back_at = t
         self.e.event(f"{self._name(v)} rolled back from C/D/E Box-1 into the GuiLan exit ({why}): "
                      f"still in the lane", "EVENT")
 
@@ -650,7 +654,13 @@ class Tracker:
             standing = v.direction == S and spot == EXIT_LINE[S] and self._standing(v, t)
             if (v.in_lane or standing) and v.direction != move:
                 past = (v.front - spot) * SIGN[v.direction]
-                if 0 <= past <= 1 and (reverse is None or v.vid < reverse.vid):
+                # a southbound car whose box showed it back in the GuiLan exit just before
+                # this C/D Cross-Line-2 (the message order within a second or two is not
+                # known): the line may be it rolling back, or a northbound car beside it
+                # (11/21 10:10:51-52, 10:49:39-41)
+                just_back = (v.direction == S and spot == EXIT_LINE[S] and v.exit_back_at is not None
+                             and t - v.exit_back_at <= 2 and v.front == SPOT[GUILAN_EXIT[0]])
+                if (0 <= past <= 1 or just_back) and (reverse is None or v.vid < reverse.vid):
                     reverse = v
         if reverse is not None:
             if not reverse.live:
@@ -851,6 +861,11 @@ class Tracker:
 
     def _moved_back(self, v, t, why, line=False):
         d = v.direction
+        if v.parked and v.parked_front is not None and v.inside:
+            lo, hi = sorted((v.front, v.parked_front))
+            back = [b for b in BOX_SPOTS if (lo <= b < hi if d == S else lo < b <= hi)]
+            if len(back) >= 2:                          # clearly reversing: two boxes back
+                self._stop_arterial(v, t, f"stood {self.s.max_red} s, then moved back two boxes")
         if (v.front - MOUTH[d]) * SIGN[d] <= 0:          # back at its entry end
             if d == S:
                 self._merge_into(v, t)
@@ -931,6 +946,7 @@ class Tracker:
                     continue
             if not v.parked and t - v.progress >= s.max_red:
                 v.parked = True
+                v.parked_front = v.front
                 self.e.event(f"{self._name(v)} has not moved for {s.max_red} s at {v.where}; "
                              f"it no longer holds the lights", "WARN")
 
@@ -1013,7 +1029,9 @@ class Tracker:
         if s.backing_stop != "On" or v.vid in self.stops or v.possible_of is not None:
             return
         countdown = max(s.z1, s.z2) if v.direction == S else max(s.x1, s.x2)
-        self.stops[v.vid] = ArterialStop(v, t, t + countdown + 1, why)
+        stop = self.stops[v.vid] = ArterialStop(v, t, t + countdown + 1, why)
+        if (v.front - MOUTH[v.direction]) * SIGN[v.direction] <= 0:
+            stop.mouth_at = t
         light = "0x00 turns red (0x01 stays red)" if v.direction == S else "0x02/0x03 turn red"
         self.e.event(f"{self._name(v)} backing out at {BACK_END[v.direction]} ({why}): {light} "
                      f"for it", "EVENT")
@@ -1029,22 +1047,24 @@ class Tracker:
         s = self.s
         for vid, stop in list(self.stops.items()):
             v, d = stop.car, stop.car.direction
+            if stop.mouth_at is None and (v.front - MOUTH[d]) * SIGN[d] <= 0:
+                stop.mouth_at = t
+            since = stop.mouth_at if stop.mouth_at is not None else 1e18
+            backup = None
             if d == S:
-                if stop.out_seen is None and self.last.get(HUOSHIH_OUT, -1e18) >= stop.start:
+                if stop.out_seen is None and self.last.get(HUOSHIH_OUT, -1e18) >= since:
                     stop.out_seen = self.last[HUOSHIH_OUT]
                 backup = next((k for k in HUOSHIH_OUT_BACKUP
-                               if self.last.get(k, -1e18) >= stop.start), None)
-                box1 = None
+                               if self.last.get(k, -1e18) >= since), None)
             else:
-                backup = None
                 box1 = max(self.last.get(k, -1e18) for k in GUILAN_OUT)
-                if box1 >= stop.start:
+                if box1 >= since:
                     stop.out_seen = box1                # the last Box-1 report so far
             if t - stop.start >= s.max_red:
                 why, level = f"still not seen outside after {s.max_red} s", "WARN"
             elif t < stop.hold_until:
                 continue
-            elif (v.front - MOUTH[d]) * SIGN[d] > 0 and v.live:
+            elif (v.front - MOUTH[d]) * SIGN[d] > 0 and v.live and v.progress > stop.start:
                 why, level = "it drives into the lane again", "EVENT"
             elif backup is not None:
                 why, level = f"seen outside at {label(backup)}", "EVENT"
@@ -1087,6 +1107,8 @@ class Tracker:
         if any(t - last < RETREAT_S for k, last in boxes.items() if SPOT[k] == top):
             return
         v.backing = True
+        if v.direction == S and v.front > EXIT_LINE[S] and here == SPOT[GUILAN_EXIT[0]]:
+            v.exit_back_at = t                          # from C/D/E Box-1 back into the exit
         v.front, v.moved = here, t
         self._rolled_back(v)                            # box by box: its crossing still counts
         v.crossed = {k: c for k, c in v.crossed.items() if (k - here) * sign < 0}
