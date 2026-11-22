@@ -654,12 +654,12 @@ class Tracker:
             standing = v.direction == S and spot == EXIT_LINE[S] and self._standing(v, t)
             if (v.in_lane or standing) and v.direction != move:
                 past = (v.front - spot) * SIGN[v.direction]
-                # a southbound car whose box showed it back in the GuiLan exit just before
+                # a southbound car whose box showed it back in the GuiLan exit up to 3 s before
                 # this C/D Cross-Line-2 (the message order within a second or two is not
                 # known): the line may be it rolling back, or a northbound car beside it
                 # (11/21 10:10:51-52, 10:49:39-41)
                 just_back = (v.direction == S and spot == EXIT_LINE[S] and v.exit_back_at is not None
-                             and t - v.exit_back_at <= 2 and v.front == SPOT[GUILAN_EXIT[0]])
+                             and t - v.exit_back_at <= 3 and v.front == SPOT[GUILAN_EXIT[0]])
                 if (0 <= past <= 1 or just_back) and (reverse is None or v.vid < reverse.vid):
                     reverse = v
         if reverse is not None:
