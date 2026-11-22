@@ -87,8 +87,8 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
 - **Installed:** f8d41076 (rear-box rule) since 11/21 05:50 (11/20 still ran 6958870f).
-- **Latest file:** 08999ed7 = f8d41076 + a shorter gone_s name (the long one hid the
-  Confidence input boxes off screen since 6958870f). Sent 11/21, to install.
+- **Latest file:** ac9df112 (sent 11/22) = f8d41076 + shorter gone_s name (08999ed7: the long
+  one hid the Confidence input boxes) + items 8 and 9 below. To install; then set 20 s.
 - **Watchdog / 00:00 restart** set up by the user 11/21 (restart seen 11/21 00:00:02-14,
   lights dark ~12 s). 1-min check, 2 s pause and DontShowUI suggested, not confirmed.
 - **11/15 stop:** the program stopped 11/15 09:34:09 and was started again 11/16 14:18:06
@@ -223,21 +223,28 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    silent 15 s in the old blind spot between B Box-2 and C/D/E Box-2). Advised: keep 25 s
    until logs with the new boxes show the longest silence of a real car. 20 s: same safety
    as 25 s on all logs; the user will set 20 s once 08999ed7 shows the Confidence boxes.
-8. **Parked car moving back** (asked 11/21): stop at its first move back, like moving forward.
-   Tested, NOT built: 11/20 13:35:03 a southbound car parked at C/D/E Box-1 rocked back one
-   box -> 60 s false 0x00 stop and no 0x01 green for a northbound car. Offered instead: stop
-   once it has moved back two boxes (or reached its mouth); no change on 10 days of logs, 3 s
-   earlier in deep-park tests (copy in the scratchpad only). Waiting for the user.
-9. **GuiLan keep-both gap**: a southbound car that rolls back into C/D/E Box-2 by its box
-   first, then C/D Cross-Line-2 1-2 s later, makes a normal northbound car instead of a
-   possible one (11/21 10:10:52 false GuiLan stop; 10:49:41 0x00 red ~54 s). Proposed fix
-   to discuss; not built.
-10. **Camera A** missed a whole southbound car 11/20 09:37:03-05 (A Box-1/A CL1/A Box-2, and
-   B CL1 too): it left under 0x02/0x03 countdown/green. A CL1 86-88% on 11/20-21 (>= 98%
-   end of October). Ideas to discuss: check camera A; let B Box-0/B Box-1 that no car
-   explains start a southbound car.
-11. **11/21 14:28:41**: GuiLan stop released ("C/D/E Box-1 quiet 3 s") during a pause in Box-1
-   reports; the northbound car still stood at C/D/E Box-1 (14:28:40-46), then drove in.
+8. ~~Parked car moving back~~: **built 11/22 (ac9df112)**: its stop starts once it is two
+   boxes back, or back in its entry mouth, whichever comes first (user's choice; a stop at
+   the first move back gave a 60 s false 0x00 stop on 11/20 13:35:03).
+9. ~~GuiLan keep-both gap~~: **built 11/22 (ac9df112)**: a C/D Cross-Line-2 within 2 s
+   (user's number) after a southbound car's box showed it back in the exit from C/D/E Box-1
+   keeps both. Fixes 11/21 10:10:52, 10/28 15:23, 10/29 14:31, 10/30 10:59; 11/21 10:49:41
+   is 2.0x s apart in the replay, just outside 2 s.
+10. **Camera A** missed a whole southbound car 11/20 09:37:03-05 (A Box-1, A CL1, A Box-2;
+   B CL1 too). User 11/22: isolated case, record only and keep watching; no program change.
+11. **Ending a southbound car on C/D/E Box-1 time alone** (user asked 5 s or 8 s, 11/22):
+   advised against. 5 s gave 0x02/0x03 green 10/28 11:41:07 while a car still stood at the
+   exit (crossed 11:41:11); 8 s ended the same car at 11:41:07 (only y = 3 s kept red);
+   19 of 186 southbound cars showed Box-1 >= 8 s before their crossing (max 56 s). Only
+   case it would help: 11/20 13:33 (C and D both missed the second car's crossing, 0x02/0x03
+   red 64 s, safe direction).
+12. **GuiLan stop release** (user 11/22: green is fine once the northbound car is in C/D/E
+   Box-1): 24 stops in 10 days, median 6 s, max 11 s. Option offered: release when the car
+   has backed out of the lane (10 of 24 stops 2-6 s shorter). Not built.
+13. **11/21 12:03:45 phantom**: A Box-1 at 12:03:42 (HuoShih traffic) made a southbound
+   candidate; at 12:03:45 the northbound car's own B Box-1 (its tail) went to that candidate
+   (ahead of it beats the rear-box rule). Idea: in the one-car-wide mouth a southbound
+   candidate does not take a box a northbound car in the lane covers or has just behind it.
 
 ## 9. How to analyse a new log and verify a change
 
@@ -284,7 +291,9 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 710e2477 | rejected by the user (16:36 roll-back, 12:40 rear-box) |
 | 7396c169 | revert of 710e2477, with the user's approval |
 | 6958870f | 11/01 agreed GuiLan exit / HuoShih mouth rules (installed by 11/15) |
-| f8d41076 | 11/20 rear-box rule for every car in the lane (**installed 11/20**) |
+| f8d41076 | 11/20 rear-box rule for every car in the lane (installed 11/21 05:50) |
+| 08999ed7 | 11/21 shorter gone_s name (Confidence input boxes visible again) |
+| ac9df112 | 11/22 parked car two boxes back; GuiLan keep-both after a box roll-back (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
