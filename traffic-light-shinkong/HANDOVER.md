@@ -87,7 +87,7 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
 - **Installed:** f8d41076 (rear-box rule) since 11/21 05:50 (11/20 still ran 6958870f).
-- **Latest file:** ac9df112 (sent 11/22) = f8d41076 + shorter gone_s name (08999ed7: the long
+- **Latest file:** 1c81bcfb (sent 11/22; ac9df112 + 3 s window) = f8d41076 + shorter gone_s name (08999ed7: the long
   one hid the Confidence input boxes) + items 8 and 9 below. To install; then set 20 s.
 - **Watchdog / 00:00 restart** set up by the user 11/21 (restart seen 11/21 00:00:02-14,
   lights dark ~12 s). 1-min check, 2 s pause and DontShowUI suggested, not confirmed.
@@ -226,25 +226,28 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 8. ~~Parked car moving back~~: **built 11/22 (ac9df112)**: its stop starts once it is two
    boxes back, or back in its entry mouth, whichever comes first (user's choice; a stop at
    the first move back gave a 60 s false 0x00 stop on 11/20 13:35:03).
-9. ~~GuiLan keep-both gap~~: **built 11/22 (ac9df112)**: a C/D Cross-Line-2 within 2 s
-   (user's number) after a southbound car's box showed it back in the exit from C/D/E Box-1
-   keeps both. Fixes 11/21 10:10:52, 10/28 15:23, 10/29 14:31, 10/30 10:59; 11/21 10:49:41
-   is 2.0x s apart in the replay, just outside 2 s.
+9. ~~GuiLan keep-both gap~~: **built 11/22 (ac9df112, window 3 s since 1c81bcfb)**: a C/D
+   Cross-Line-2 within 3 s after a southbound car's box showed it back in the exit from
+   C/D/E Box-1 keeps both. Fixes 11/21 10:10:52 and 10:49:41, 10/28 15:23, 10/29 14:31,
+   10/30 10:59.
 10. **Camera A** missed a whole southbound car 11/20 09:37:03-05 (A Box-1, A CL1, A Box-2;
    B CL1 too). User 11/22: isolated case, record only and keep watching; no program change.
-11. **Ending a southbound car on C/D/E Box-1 time alone** (user asked 5 s or 8 s, 11/22):
-   advised against. 5 s gave 0x02/0x03 green 10/28 11:41:07 while a car still stood at the
-   exit (crossed 11:41:11); 8 s ended the same car at 11:41:07 (only y = 3 s kept red);
-   19 of 186 southbound cars showed Box-1 >= 8 s before their crossing (max 56 s). Only
-   case it would help: 11/20 13:33 (C and D both missed the second car's crossing, 0x02/0x03
-   red 64 s, safe direction).
-12. **GuiLan stop release** (user 11/22: green is fine once the northbound car is in C/D/E
-   Box-1): 24 stops in 10 days, median 6 s, max 11 s. Option offered: release when the car
-   has backed out of the lane (10 of 24 stops 2-6 s shorter). Not built.
-13. **11/21 12:03:45 phantom**: A Box-1 at 12:03:42 (HuoShih traffic) made a southbound
-   candidate; at 12:03:45 the northbound car's own B Box-1 (its tail) went to that candidate
-   (ahead of it beats the rear-box rule). Idea: in the one-car-wide mouth a southbound
-   candidate does not take a box a northbound car in the lane covers or has just behind it.
+11. **Ending a southbound car on C/D/E Box-1 time alone** (5 s / 8 s): advised against, user
+   agreed (10/28 11:41 near-miss). User's rule instead (11/22), tested in a copy, waiting
+   for "go": a southbound car at C/D/E Box-1 with no C/D Cross-Line-1 ends once C/D/E Box-1
+   and Box-2 are both quiet 3 s and it stood still 3 s, **only if it reached C/D/E Box-2
+   before Box-1** (without that guard it ended a car on 10/27 10:17:54, 1 s before it
+   crossed: GuiLan traffic in Box-1 + a 7 s silence in the old blind spot). Lane silences
+   B Box-2 -> GuiLan line on 11/20-21: max 4 s (7-15 s before the box changes).
+12. **GuiLan stop release** (user 11/22): also release a northbound backing-out stop when
+   C/D/E Box-1 has reported and C/D/E Box-2 has been quiet 3 s (Box-1 may still report).
+   Not on a backwards Cross-Line alone. Tested in a copy (1-4 s shorter in ~10 stops),
+   waiting for "go".
+13. **11/21 12:03:45 phantom** - mouth rule tested in a copy, waiting for "go": in A Box-1
+   to B Box-1 a southbound candidate does not take a box a northbound car in the lane
+   covers or has just behind its rear. Only change in 10 days: 11/21 12:03:47-12:04:12.
+   Items 11-13 together (copy scratchpad ver/all3): same lights at every real exit, also
+   without F Box-0; no DANGER; 0x02/0x03 red -0..30 s per day.
 
 ## 9. How to analyse a new log and verify a change
 
@@ -293,7 +296,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 6958870f | 11/01 agreed GuiLan exit / HuoShih mouth rules (installed by 11/15) |
 | f8d41076 | 11/20 rear-box rule for every car in the lane (installed 11/21 05:50) |
 | 08999ed7 | 11/21 shorter gone_s name (Confidence input boxes visible again) |
-| ac9df112 | 11/22 parked car two boxes back; GuiLan keep-both after a box roll-back (**latest**) |
+| ac9df112 | 11/22 parked car two boxes back; GuiLan keep-both after a box roll-back |
+| 1c81bcfb | 11/22 keep-both window 3 s (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
