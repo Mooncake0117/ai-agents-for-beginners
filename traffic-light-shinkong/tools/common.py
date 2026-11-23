@@ -38,11 +38,13 @@ def engine(d):
     return _engines[d]
 
 def pc_settings(e):
-    """The settings the B3-PC runs with (read from the 10/28-10/30 decisions logs)."""
+    """The settings the B3-PC runs with (decisions logs 10/28-10/30; quiet hours from 22:00 as
+    the user set long ago, told 11/23)."""
     st = e.Settings()
     st.u, st.v, st.w, st.y = 3, 2, 2, 3
     st.x1, st.x2, st.z1, st.z2 = 3, 2, 3, 2
     st.south_start, st.backing_stop = "A Box-1", "On"
+    st.quiet_from = 22
     return st
 
 def replay(d, day, trace=None, **over):

@@ -93,6 +93,15 @@ confidence score:
   * The HuoShih mouth is one car wide, so while a southbound car backs into it
     from deeper in, a "new" southbound car seen only in the mouth since then
     (its rear, or a line it set off while reversing) is that same car.
+  * Roll-back at HuoShih: a northbound car that left at HuoShih 3-30 s ago may
+    roll back into the mouth.  When A Box-2/B Box-0 report again after 3 s of
+    quiet and F Box-0 has not reported since it left, that car holds the lights
+    again, and a southbound car coming in is kept beside it (keep both): the
+    southbound one reaching B Box-1 or crossing A Cross-Line-1 means it was a
+    southbound car; the northbound one leaving again means it was the roll-back
+    (11/23 12:55:30, 14:09:45, 22:14:44).  Its boxes quiet 3 s = left again.
+  * A southbound car never jumps over C/D/E Box-2 into Box-1 (Box-1 also sees
+    GuiLan traffic, 11/16 16:00:35).
   * Setting backing_stop (Off by default): while a car that had been in the
     lane backs out of its entry end (back in the mouth: A Box-2/B Box-0 or
     nearer HuoShih, C/D/E Box-2 or nearer GuiLan), the arterial behind it is
@@ -201,6 +210,7 @@ HEALTH_ROUTE = {
 SOUTH_ENTRY = {"A": [("A", "B1"), ("A", "CL1"), ("A", "B2")],
                "B": [("B", "B0"), ("B", "B1"), ("B", "CL1")]}
 
+ROLLBACK_S = 30.0       # a northbound car that left at HuoShih may roll back into the mouth this long after
 LINGER_S = 5.0          # a finished car still takes repeats of its own boxes this long
 STAND_S = 30.0          # ... or of A Box-1 while it stands there, waiting to turn into HuoShih
 RETREAT_S = 3.0         # front box quiet this long while a box behind keeps reporting = moved back
@@ -381,6 +391,8 @@ class Vehicle:
     parked: bool = False
     parked_front: int | None = None  # where it stood when it was parked
     exit_back_at: float | None = None    # southbound: rolled back from C/D/E Box-1 into the exit
+    back_at: float | None = None     # northbound: rolled back into the HuoShih mouth after it had left
+    partner_n: int | None = None     # southbound possibility beside that rolled-back northbound car
     unseen: bool = False       # only seen when it left the lane
     moved: float = 0.0         # last time its front changed or it crossed a line
     possible_of: int | None = None   # made from a line that car may have set off rolling back
@@ -428,6 +440,7 @@ class Tracker:
         self.vehicles = []
         self.next_id = 1
         self.last = {}                  # zone -> time of its last message
+        self.inside_prev = -1e18               # A Box-2 / B Box-0 last report before the current one
         self.active_spans = []          # (start, end) of every car that held the lights
         self.done = []                  # finished cars that were in the lane (newest last)
         self.orphans = []               # (time, zone) of lane boxes no car explained
@@ -440,6 +453,8 @@ class Tracker:
 
     # ---------------------------------------------------------- messages
     def message(self, t, key):
+        if key in HUOSHIH_MOUTH[1:]:                    # A Box-2 / B Box-0: inside the lane
+            self.inside_prev = max(self.last.get(k, -1e18) for k in HUOSHIH_MOUTH[1:])
         self.last[key] = t
         if key in HUOSHIH_ARTERIAL or key in GUILAN_ARTERIAL or key in OTHER_ZONES:
             return
@@ -503,7 +518,10 @@ class Tracker:
                 b = self._box_steps(v, spot)
                 # in the lane, or a southbound car in the HuoShih mouth: one missed box allowed
                 reach = 2 if (v.inside and v.in_lane) or (v.direction == S and 1 <= v.front <= MOUTH[S]) else 1
-                if 0 <= b <= reach and not self._blocked(v, spot, t):
+                if (0 <= b <= reach and not self._blocked(v, spot, t)
+                        and not (v.direction == S and spot == OUTER_BOX[S] and b == 2)):
+                    # (a southbound car does not jump over C/D/E Box-2 into Box-1: Box-1 also sees
+                    # GuiLan traffic, and its own line behind it would make a new car, 11/16 16:00:35)
                     if v.direction == S and not v.in_lane and self._north_holds(key, spot, t):
                         continue                        # one car wide: that box is the northbound car
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
@@ -528,6 +546,14 @@ class Tracker:
                 best, best_rank = v, rank
         if linger and best_rank[0] == 1 and best_rank[2] == 2:
             best = linger[0]                            # not a jump over a box: the car that just left
+        if spot == MOUTH[S]:
+            back = self._north_back(t)
+            if back is not None and (best is None or (best.direction == S and best.front <= MOUTH[S]
+                                                      and best.vid > back.vid and best.live)):
+                self._north_revive(back, t, key)
+                if best is None:                        # keep both: or a southbound car coming in
+                    best = self._new(t, key, S, 1, self.s.score_candidate_s + self.s.score_box)
+                best.partner_n = back.vid
         if best is not None:
             if not best.live and best.direction == S and spot == 7 and self._standing(best, t):
                 self._revive(best, t, label(key))
@@ -541,6 +567,10 @@ class Tracker:
             self._attach(best, t, key, spot, None)
             if spot == 1 and best.direction == S:
                 self._join_mouth(best, t)
+            if spot in (1, MOUTH[S]):
+                for u in self._partners(best):          # both possibilities see the mouth
+                    u.zones[key] = t
+                    u.seen = t
             return
         if spot == 0:
             self._new(t, key, S, 0, self.s.score_candidate_s)
@@ -551,6 +581,42 @@ class Tracker:
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
+
+    def _partners(self, v):
+        """The other possibility of a rolled-back northbound car (keep both)."""
+        if v.direction == N:
+            return [u for u in self.vehicles if u.live and u.partner_n == v.vid]
+        return [u for u in self.vehicles if v.partner_n is not None and u.vid == v.partner_n and u.live]
+
+    def _north_back(self, t):
+        """A northbound car left at HuoShih RETREAT_S..ROLLBACK_S ago, and now A Box-2 / B Box-0
+        (inside the lane) report again after a pause, with no F Box-0 since it left (F Box-0
+        sees cars turning in, not cars going out, since 11/21): it may have rolled back
+        into the lane (11/21 13:07:29)."""
+        if t - self.inside_prev < RETREAT_S:
+            return None                                 # the mouth kept reporting: its own tail
+        f0 = self.last.get(HUOSHIH_OUT, -1e18)
+        for v in reversed(self.done):
+            if (v.direction == N and v.state == "ended" and v.end_reason.startswith("left at HuoShih")
+                    and RETREAT_S <= t - v.end_time <= ROLLBACK_S and f0 < v.end_time):
+                return v
+        return None
+
+    def _north_revive(self, v, t, key):
+        if v in self.done:
+            self.done.remove(v)
+        if (v.active_since, v.end_time) in self.active_spans:
+            self.active_spans.remove((v.active_since, v.end_time))
+        v.state, v.end_time, v.end_reason = "active", None, ""
+        v.exit_time = v.outer_time = None
+        v.crossed = {k: c for k, c in v.crossed.items() if k != EXIT_LINE[N]}
+        v.front, v.moved, v.seen, v.progress, v.back_at = MOUTH[S], t, t, t, t
+        v.zones = {key: t}
+        v.visited.add(key)
+        if v not in self.vehicles:
+            self.vehicles.append(v)
+        self.e.event(f"{self._name(v)} possibly back in the HuoShih mouth ({label(key)}, no F Box-0 since "
+                     f"it left): held until the next messages tell", "EVENT")
 
     def _north_holds(self, key, spot, t):
         """A northbound car in the lane covers this box of the one-car-wide HuoShih part
@@ -928,6 +994,22 @@ class Tracker:
                 if t - v.seen > s.candidate_s:
                     self.finish(v, t, "cancelled", "left the mouth without entering the lane")
                 continue
+            if v.partner_n is not None:
+                p = next((u for u in self.vehicles if u.vid == v.partner_n), None)
+                if (v.front > MOUTH[S] or EXIT_LINE[N] in v.crossed) and p is not None and p.live:
+                    self.finish(p, t, "cancelled", f"it was southbound car #{v.vid} coming in")
+                    p.zones = {}                        # its mouth boxes are the southbound car's
+                    v.partner_n = None
+                elif p is None or not p.live:
+                    if v.front <= MOUTH[S] and EXIT_LINE[N] not in v.crossed:
+                        self.finish(v, t, "cancelled", f"it was northbound car #{v.partner_n} rolling back")
+                        v.zones = {}                    # its mouth boxes were the northbound car's
+                        continue
+                    v.partner_n = None
+            if (v.direction == N and v.back_at is not None and t - v.back_at >= s.gone_s
+                    and t - max(v.zones.values(), default=-1e18) >= s.gone_s):
+                self.finish(v, t, "ended", f"left at HuoShih again (its boxes quiet {s.gone_s:g} s)")
+                continue
             if v.possible_of is not None and self._possible_gone(v, t):
                 self.finish(v, t, "cancelled", f"it was southbound car #{v.possible_of} rolling "
                                                f"back at the GuiLan exit")
@@ -952,7 +1034,7 @@ class Tracker:
                     self.finish(v, t, "ended", f"left at {END_NAME[d]} ({EXIT_LINE_NAME[d]}, "
                                                f"{s.gone_s:g} s without {OUTER_BOX_NAME[d]})")
                     continue
-                if v.exit_time is None and not any(     # northbound at A Box-1, A Cross-Line-2 missed
+                if v.exit_time is None and t - (v.back_at or -1e18) >= s.gone_s and not any(
                         t - last < s.gone_s for k, last in v.zones.items()
                         if not k[1].startswith("CL") and SPOT[k] >= 3):
                     self.finish(v, t, "ended", f"left at HuoShih (A Box-1, its lane boxes quiet "
