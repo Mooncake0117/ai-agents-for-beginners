@@ -102,7 +102,9 @@ confidence score:
     once it has begun, or at once when F Box-1 or F Box-2 does.  At GuiLan it
     ends once C/D/E Box-1 has reported and then been quiet for backing_clear_s:
     the car has reached the middle of the intersection, where everyone sees
-    it.  It also ends when the car drives in again (or, before any of those
+    it; or once C/D/E Box-1 has reported and C/D/E Box-2 has been quiet that
+    long (the car stands in Box-1, out of the lane: 11/22).  It also ends
+    when the car drives in again (or, before any of those
     reports, is no longer tracked); never before the countdown has turned red,
     never later than max_red.  A northbound car meanwhile waits for 0x01: it turns green when
     the stop ends (0x00 has been red w s by then), and after it 0x01 counts
@@ -502,6 +504,8 @@ class Tracker:
                 # in the lane, or a southbound car in the HuoShih mouth: one missed box allowed
                 reach = 2 if (v.inside and v.in_lane) or (v.direction == S and 1 <= v.front <= MOUTH[S]) else 1
                 if 0 <= b <= reach and not self._blocked(v, spot, t):
+                    if v.direction == S and not v.in_lane and self._north_holds(key, spot, t):
+                        continue                        # one car wide: that box is the northbound car
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
                 elif b == -1 and v.in_lane and not (spot == 0 and v.front > 1):
                     rank = (2, -v.seen)                 # the box just behind, car straddles both
@@ -547,6 +551,16 @@ class Tracker:
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
+
+    def _north_holds(self, key, spot, t):
+        """A northbound car in the lane covers this box of the one-car-wide HuoShih part
+        (A Box-1 to B Box-1), or has it just behind its rear (11/21 12:03:45)."""
+        if spot > 4:
+            return False
+        return any(u.direction == N and u.in_lane
+                   and (t - u.zones.get(key, -1e18) <= self.s.occupied_s
+                        or self._behind_rear(u, spot, t) in (0, 1))
+                   for u in self.vehicles)
 
     def _behind_rear(self, v, spot, t):
         """Boxes from the rear of the boxes car v covers now to the box at spot,
@@ -960,9 +974,15 @@ class Tracker:
         it rolled back over Cross-Line-2: then it was at the line, and C/D/E Box-1 after
         it is the car going out again without the line firing twice (10/29 14:28:48)."""
         crossed_before = v.before_back is not None and v.before_back[0] is not None
-        if v.exit_time is None and not (crossed_before and v.outer_time is not None):
-            return False
         s = self.s
+        no_line = False
+        if v.exit_time is None and not (crossed_before and v.outer_time is not None):
+            # reached C/D/E Box-1 but no C/D Cross-Line-1: gone once Box-1 is quiet too
+            box2_first = v.first.get(SPOT[GUILAN_EXIT[0]])
+            if (v.outer_time is None or box2_first is None or box2_first > v.outer_time
+                    or t - max(self.last.get(k, -1e18) for k in GUILAN_OUT) < s.gone_s):
+                return False                            # it must have reached C/D/E Box-2 first
+            no_line = True
         box2 = [last for k, last in v.zones.items() if not k[1].startswith("CL") and SPOT[k] <= 7]
         box2 += [o[0] for o in self.orphans if SPOT[o[1]] in (6, 7)]
         box2 += [last for u in self.vehicles if u.possible_of == v.vid
@@ -971,6 +991,8 @@ class Tracker:
             return False
         how = ("C/D Cross-Line-1" if v.exit_time is not None else "C/D Cross-Line-1 earlier") + (
             " and C/D/E Box-1" if v.outer_time is not None else "")
+        if no_line:
+            how = f"C/D/E Box-1, no C/D Cross-Line-1; C/D/E Box-1 quiet {s.gone_s:g} s"
         self.finish(v, t, "ended", f"left at GuiLan ({how}; no movement and nothing at "
                                    f"C/D/E Box-2 for {s.gone_s:g} s)")
         return True
@@ -1068,6 +1090,9 @@ class Tracker:
                 why, level = "it drives into the lane again", "EVENT"
             elif backup is not None:
                 why, level = f"seen outside at {label(backup)}", "EVENT"
+            elif (d == N and stop.out_seen is not None
+                  and t - max(self.last.get(k, -1e18) for k in GUILAN_EXIT) >= s.backing_clear_s):
+                why, level = (f"at C/D/E Box-1, C/D/E Box-2 quiet for {s.backing_clear_s:g} s"), "EVENT"
             elif stop.out_seen is not None:
                 if t < stop.out_seen + s.backing_clear_s:
                     continue
