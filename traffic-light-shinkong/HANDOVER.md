@@ -86,9 +86,10 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Stop-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
-- **Installed:** f8d41076 (rear-box rule) since 11/21 05:50 (11/20 still ran 6958870f).
-- **Latest file:** 95eea501 (sent 11/23): all agreed rules incl. items 11-13 below = f8d41076 + shorter gone_s name (08999ed7: the long
-  one hid the Confidence input boxes) + items 8 and 9 below. To install; then set 20 s.
+- **Installed:** 1c81bcfb on 11/23 (live decisions match its replay best); f8d41076 ran
+  11/21 05:50-11/22; 11/20 still ran 6958870f.
+- **Latest file:** c0414021 (sent 11/23): all agreed rules incl. items 11-15 below. To install;
+  fade_to_s still 25 s on the PC on 11/23 (the user wanted 20 s).
 - **Watchdog / 00:00 restart** set up by the user 11/21 (restart seen 11/21 00:00:02-14,
   lights dark ~12 s). 1-min check, 2 s pause and DontShowUI suggested, not confirmed.
 - **11/15 stop:** the program stopped 11/15 09:34:09 and was started again 11/16 14:18:06
@@ -116,7 +117,7 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
 | gone_s | 3 | car ends this long after its exit line with no further movement |
 | hold_s / fade_to_s | 5 / 25 | silent car keeps its score / fades to the cut-off |
 | occupied_s | 2.5 | a box counts as occupied this long after its last message |
-| quiet_from / quiet_to | 23 / 8 | no silence alarm 23:00-08:00 |
+| quiet_from / quiet_to | 22 * / 8 | no silence alarm 22:00-08:00 (user set 22 long ago, told 11/23) |
 | silent_alarm_min | 60 | fixed cycle (V22) if no camera sends for 60 min in the daytime |
 
 ## 5. How the engine decides (short)
@@ -238,7 +239,7 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 12. ~~GuiLan stop release~~ **built 11/23**: also when C/D/E Box-1 reported and Box-2 quiet 3 s.
 13. ~~HuoShih mouth rule~~ **built 11/23**: a southbound candidate does not take a box a
    northbound car in the lane covers or has just behind it (11/21 12:03:45).
-14. **Northbound roll-back at HuoShih** (tested in a copy, scratchpad ver/rb3, waiting): A
+14. ~~Northbound roll-back at HuoShih~~ **built 11/23 (c0414021)**: A
    Box-2/B Box-0 3-30 s after a northbound car left at HuoShih, after a 3 s pause and with no
    F Box-0 since it left -> that car "possibly back" (holds 0x00/0x01) and a southbound
    possibility beside it; southbound deeper in -> drop the northbound; northbound boxes
@@ -246,14 +247,39 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    days (real hesitations at the exit), ~7-10 s 0x00 red each; same lights at real exits.
    11/22 (F Box-0 moved all day): F Box-0 before 16/16 southbound entries, after 1/16
    northbound exits; F Box-1/F Box-2 after 15/16 northbound exits; no roll-back that day.
+   11/23: real roll-backs at 12:55:30, 14:09:45, 22:14:44 (0x00 red while the car was back
+   in the mouth, then out on HuoShih); 10:19:49 resolved as a southbound car by A CL1. The
+   cancelled possibility now gives up its mouth boxes at once (else it hid the southbound
+   car's back-out at 10:19:58).
 15. **11/16 16:00:35** (not new, also live 6958870f and 730ab509): E Box-1 (GuiLan traffic)
    pulled southbound car #265 over C/D/E Box-2 into Box-1, so its own B Cross-Line-1 in the
    same second made car #266. Tested fix (ver/nojump): a southbound car does not jump over
-   C/D/E Box-2 into Box-1. Same lights at real exits; waiting.
+   C/D/E Box-2 into Box-1. **Built 11/23 (c0414021).** It also ends 11/23 10:49:20's car
+   (C Box-1 at 10:49:23) normally instead of lost after 25 s.
 16. **11/22 log**: 21:04:23-22:06:42 no camera message at all, but the live program did not
    switch to V22 (replay with silent_alarm_min 60 does). Asked the user to check the
    silence setting. Camera A CL1 12/16 (75%) on 11/22 (86-88% on 11/20-21).
 17. Agreed 11/23: look at new logs only; old logs are used only as a regression check.
+18. **11/23 log, proposals waiting for the user** (all stages >= 98%, 200 S + 201 N exits,
+   only fast-northbound all-red flags, 9 cars lost after 25 s in the new build vs 0-4 before):
+   a. Northbound car backing out at GuiLan, GuiLan stop released by "C/D/E Box-1 quiet 3 s",
+      but the car itself kept until lost (25 s more 0x00 red + 0x01 green): 11:08:34,
+      11:21:47, 11:22:32. Cause: a Box-2 report right after the backwards Cross-Line-1 says
+      "back in the lane", and "backed out" needs Box-1 still busy. Proposal: end the car when
+      its GuiLan stop ends that way and nothing further in reported.
+   b. 11:00:54: southbound car #382 rolled back from Box-1 (11:00:46) and stood in E Box-2;
+      C/D Cross-Line-2 8 s later -> full northbound car, lost (27 s 0x00 red). Proposal: the
+      keep-both "possible" car while that southbound car still stands in Box-2 after rolling
+      back, not only within 3 s.
+   c. Late A Cross-Line-1 (1-2 s after the car is already at B Box-1/B Box-2) plus the car's
+      own F Box-0 / A Box-1 -> phantom southbound car, lost after 25 s (~15-25 s extra
+      0x02/0x03 red): 13:20:31 (+13:20:56), 14:10:48, 14:35:57 (also 10/31 10:07:33,
+      11/20 09:22:31). New since F Box-0 was moved (it now sees the car itself). Proposal:
+      a southbound car made in the mouth within 3 s behind another one stays a mouth
+      candidate until it reaches B Box-1 (dropped like a nose-in otherwise).
+   d. Record only: 11:08:05 northbound phantom (previous car's B Box-2 tail + E Box-1/E Box-2
+      GuiLan traffic; (a) would shorten it); 15:17 three cars meeting (B CL2 of one car
+      confirmed another's possible car, ~23 s extra 0x00 red).
 
 ## 9. How to analyse a new log and verify a change
 
@@ -304,7 +330,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 08999ed7 | 11/21 shorter gone_s name (Confidence input boxes visible again) |
 | ac9df112 | 11/22 parked car two boxes back; GuiLan keep-both after a box roll-back |
 | 1c81bcfb | 11/22 keep-both window 3 s |
-| 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule (**latest**) |
+| 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule |
+| c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)

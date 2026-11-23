@@ -293,3 +293,19 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - F Box-0 moved ~13:45-14:00 on 11/21. 11/21 13:07:18-57: a northbound car went out to F
   Box-2, came back into A Box-1/A Box-2 for 27 s without F Box-0, went out again.
 - Daily restart 11/21 00:00:02-00:00:14 (dark ~12 s). A stop/start 11/21 05:49:55-05:50:16.
+
+## 2026-11-23 (Monday, F Box-0 at its new place all day; live program 1c81bcfb)
+
+- 201 S / 201 N trips (+7 both lines, 6 unclear). Every stage >= 98% (A CL2 98%, B B0 S
+  99%, C/D CL1 S 100%); F B0 before 201/201 southbound entries. Per camera: D B1 S 15%,
+  C B1 N 29%, D B1 N 33% (the others carry the stage).
+- Order: A CL1 fires ~1 s after A Box-2 (median -2 s vs -3 s to B CL1); 3 times it came
+  1-2 s after the car was already at B Box-1/B Box-2 and, with the car's own F B0 / A B1,
+  made a phantom southbound car lost after 25 s (13:20:31, 14:10:48, 14:35:57).
+- Live: 200 S + 201 N real exits, 1 flagged (18:21:23 fast northbound car in the 0x00-red
+  all-red, safe). Daily restart 00:00:02-00:00:05. No operator change that day.
+- Northbound roll-backs at HuoShih (A CL2, out to F B2, back into A Box-2/B Box-0/B Box-1,
+  out again): 12:55:30, 14:09:45, 22:14:44; 10:19:49 ambiguous (A CL1 at 10:19:52).
+- Northbound cars backing out at GuiLan kept ~22 s after their GuiLan stop ended (11:08:34,
+  11:21:47, 11:22:32). Southbound roll-back into E Box-2 then C/D CL2 8 s later (11:00:54).
+- Silences: B-E 21:16-22:10 with no lane traffic (A/F only HuoShih traffic): normal.
