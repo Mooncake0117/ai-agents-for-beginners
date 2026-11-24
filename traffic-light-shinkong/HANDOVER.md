@@ -280,6 +280,16 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    d. Record only: 11:08:05 northbound phantom (previous car's B Box-2 tail + E Box-1/E Box-2
       GuiLan traffic; (a) would shorten it); 15:17 three cars meeting (B CL2 of one car
       confirmed another's possible car, ~23 s extra 0x00 red).
+   **Tested together 11/24 (scratchpad ver/abc = c0414021 + a + b + c, script work/mkabc.py),
+   waiting for the user:** a needs two more conditions (C/D/E Box-2 quiet 3 s; no line crossed
+   in its direction since the stop began), else it ended a car that drove in again (11/20
+   13:08:26) or still stood in C/D Box-2 (11/20 14:12:17). Result over 12 days: no
+   interaction (the combined copy = the three single changes added, never at the same second),
+   real exits and the no-F-Box-0 stress test identical, scenario tests no DANGER. Lost cars
+   11/23 9 -> 2, 11/20 2 -> 0. Side effects: GuiLan green 3-4 s earlier at 11/23 09:51:44 and
+   11/20 15:19:48 (the old code restarted a GuiLan stop right after releasing it); 11/21
+   14:28:48 the car that backed out came in again as a new car (2 s countdown, out under 0x01
+   green); a close convoy's second car counts at B Box-1 instead of A Box-1 (first car's red).
 
 ## 9. How to analyse a new log and verify a change
 
