@@ -37,10 +37,12 @@ def engine(d):
         _engines[d] = m
     return _engines[d]
 
-def pc_settings(e):
+def pc_settings(e, day=None):
     """The settings the B3-PC runs with (decisions logs 10/28-10/30; quiet hours from 22:00 as
-    the user set long ago, told 11/23)."""
+    the user set long ago, told 11/23; fade_to_s 20 s since 11/24 05:42)."""
     st = e.Settings()
+    if day is not None and day >= "2026-11-24":
+        st.fade_to_s = 20
     st.u, st.v, st.w, st.y = 3, 2, 2, 3
     st.x1, st.x2, st.z1, st.z2 = 3, 2, 3, 2
     st.south_start, st.backing_stop = "A Box-1", "On"
@@ -49,7 +51,7 @@ def pc_settings(e):
 
 def replay(d, day, trace=None, **over):
     e = engine(d)
-    st = pc_settings(e)
+    st = pc_settings(e, day)
     for k, v in over.items(): setattr(st, k, v)
     eng, lines, tl = e.replay(log_of(day), st, trace=trace, out=io.StringIO())
     return e, eng, lines, tl

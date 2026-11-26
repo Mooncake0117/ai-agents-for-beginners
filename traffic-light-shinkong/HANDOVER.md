@@ -11,9 +11,13 @@ Branch with the latest work: `claude/traffic-light-cycle-refactor-4isbz8`.
 
 ## 1. The user's working rules (binding, in the user's own words)
 
-1. "If you want to make any changes, discuss them with me first and obtain my approval
-   before proceeding; do not make any fix until I have given my consent."
-2. "Don't rush to do any fix, discuss with me first!"
+1. **Since 11/26 (replaces the old "ask before any fix" rules):** "From now on, for this
+   Traffic light smart control project, I will let you decide if a new rule/code build is
+   necessary or not ... if you feel this change/modify is necessary, then build the code, I
+   will update to the B3's PC, after then I will update the daily log, let's see how it
+   works." "If you need my help/clarification, use Bold, Big font to let me know!"
+2. "If adding a new rule or modifying the code to address a single specific case ends up
+   negatively impacting other scenarios, then such a change might not be necessary."
 3. "Your response should continue our previous discussion first before starting the new
    log analysis. For the new log analysis, discuss each False/Alarm item based on the time
    the event occurred; avoid repeating points that have already been mentioned."
@@ -86,10 +90,9 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
   Stop-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   Start-ScheduledTask -TaskName "ShinKong Traffic Light B3"
   ```
-- **Installed:** 1c81bcfb on 11/23 (live decisions match its replay best); f8d41076 ran
-  11/21 05:50-11/22; 11/20 still ran 6958870f.
-- **Latest file:** c0414021 (sent 11/23): all agreed rules incl. items 11-15 below. To install;
-  fade_to_s still 25 s on the PC on 11/23 (the user wanted 20 s).
+- **Installed:** c0414021 since 11/24 05:40 (fade_to_s 20 s since 11/24 05:42:06 "Settings
+  applied"); 1c81bcfb on 11/23; f8d41076 11/21 05:50-11/22; 11/20 still ran 6958870f.
+- **Latest file:** see the commit table (section 11); to install.
 - **Watchdog / 00:00 restart** set up by the user 11/21 (restart seen 11/21 00:00:02-14,
   lights dark ~12 s). 1-min check, 2 s pause and DontShowUI suggested, not confirmed.
 - **11/15 stop:** the program stopped 11/15 09:34:09 and was started again 11/16 14:18:06
@@ -115,7 +118,7 @@ F Box-1 / F Box-2 / E Box-0 are recorded only.
 | backing_clear_s | 3 | release after F Box-0 / GuiLan boxes |
 | max_red | 60 | a car that does not move holds the lights at most 60 s ("parked") |
 | gone_s | 3 | car ends this long after its exit line with no further movement |
-| hold_s / fade_to_s | 5 / 25 | silent car keeps its score / fades to the cut-off |
+| hold_s / fade_to_s | 5 / 20 * (25 before 11/24) | silent car keeps its score / fades to the cut-off |
 | occupied_s | 2.5 | a box counts as occupied this long after its last message |
 | quiet_from / quiet_to | 22 * / 8 | no silence alarm 22:00-08:00 (user set 22 long ago, told 11/23) |
 | silent_alarm_min | 60 | fixed cycle (V22) if no camera sends for 60 min in the daytime |
@@ -291,6 +294,31 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    14:28:48 the car that backed out came in again as a new car (2 s countdown, out under 0x01
    green); a close convoy's second car counts at B Box-1 instead of A Box-1 (first car's red).
 
+19. **11/24-11/25 logs (installed c0414021, fade 20 s) and the 11/26 build** (Claude decides
+   now, rule 1): built a (with its two extra conditions), b, c from item 18, plus:
+   - f: a southbound car that reached A Box-2/B Box-0 and backs out over A Cross-Line-2
+     gets the 0x00 stop even if A Cross-Line-1 missed it (11/24 13:13:45 and 11/25
+     10:53:06 backed onto HuoShih under 0x00 green; ~1-2 s of 0x00 red, 5-10 times a day).
+   - i: B Box-0, B Box-1, B Box-2 in that order, unexplained, no northbound car -> a
+     southbound car (camera A missed the whole car: 11/20 09:37:05, 11/24 14:09:17 left
+     at GuiLan under green). B Box-0 + B Box-1 alone was 3 camera-B phantoms (10/31
+     08:11:30, 08:35:13; 11/22 08:53:43), so all three are needed.
+   - k: roll-back keep-both resolved as southbound only at B Cross-Line-1 or further; A
+     Cross-Line-1 and B Box-1 come from the car rolling back too (the user's 11/23 10:19
+     explanation; 11/24 17:29:02): GuiLan green at 10:19:59 instead of 10:20:25.
+   Not built: e (end a backing-out southbound car on F Box-1/F Box-2 with the mouth quiet,
+   the user's idea for 10:19) changed nothing on 14 days, k covers its case; h (a car that
+   left keeps its box at C/D/E Box-1, fixes 11/24 10:23:05) made 11/25 10:52 13 s worse;
+   g (A Cross-Line-1 while a car is in the mouth goes to it before a candidate, 11/24
+   09:32:50) is a double-fired line = rule 5. Verified: 14 days, no rule interaction, real
+   exits identical except the two dangerous ones fixed, scenario tests no DANGER, no-F-Box-0
+   stress the same. Lost cars 11/23 9->1, 11/24 12->11, 11/25 8->5.
+   Record only: 11/24 14:06-14:07 two-way jam (northbound car parked 60 s at B lines,
+   0x00 green 14:07:12-21, out at 14:07:22 as 0x00 turned red); B Cross-Line-1 misfires
+   while northbound cars pass (11/24 15:01:07, 16:45:29); camera A 11/24: A CL1 88%
+   (suspect 14:45:59-14:59:10), whole cars missed 12:09:41 and 14:09:19; camera C 11/25:
+   C CL1 72%, C CL2 77% (D covers); 11/25 11:31:21 C/D/E missed a car at GuiLan.
+
 ## 9. How to analyse a new log and verify a change
 
 1. Upload: `B3_log_YYYY-MM-DD.txt` and `B3_decisions_YYYY-MM-DD.txt` (UTF-16 or UTF-8).
@@ -341,7 +369,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | ac9df112 | 11/22 parked car two boxes back; GuiLan keep-both after a box roll-back |
 | 1c81bcfb | 11/22 keep-both window 3 s |
 | 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule |
-| c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (**latest**) |
+| c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (installed 11/24) |
+| (this commit) | 11/26 rules a, b, c, f, i, k (item 19) (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)

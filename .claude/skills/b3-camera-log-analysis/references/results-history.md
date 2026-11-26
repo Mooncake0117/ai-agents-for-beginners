@@ -309,3 +309,16 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
 - Northbound cars backing out at GuiLan kept ~22 s after their GuiLan stop ended (11:08:34,
   11:21:47, 11:22:32). Southbound roll-back into E Box-2 then C/D CL2 8 s later (11:00:54).
 - Silences: B-E 21:16-22:10 with no lane traffic (A/F only HuoShih traffic): normal.
+
+## 2026-11-24 / 11-25 (live program c0414021 since 11/24 05:40, fade 20 s since 05:42)
+
+- 11/24: 302 S / 301 N trips (+15 both lines). A CL1 88% (37 misses; suspect 14:45:59,
+  works again 14:59:10), A CL2 95%; camera A missed two whole southbound cars (12:09:41,
+  14:09:19; at 14:09 B CL1 missed too -> left at GuiLan under green, live). Others ~100%.
+- 11/25: 263 S / 261 N trips. A CL1 100%; camera C weak all day: C CL1 72%, C CL2 77%
+  (D CL1 99%, D CL2 100% carry the stage); 11:31:21 C/D/E missed a southbound car at GuiLan.
+- Live real exits: 11/24 301+301, 11/25 262+261. Flags: fast northbound all-red (safe);
+  11/24 14:09:24 the camera-A-missed car (dangerous); 11/24 14:07:22 jam (0x00 red at
+  exit second); 11/24 13:13:45 and 11/25 10:53:06 are southbound back-outs over A CL2
+  (no 0x00 stop: no A CL1), not northbound exits.
+- Roll-back revivals live: 11/24 10:19:40, 11:42:33, 16:10:42, 17:29:01; 11/25 11:44:07.

@@ -59,7 +59,12 @@ confidence score:
     the mouth, or F Box-0 missed), A Box-2 after A Box-1, A Cross-Line-1, B
     Cross-Line-1 or any later spot does the same.  A car seen only at the
     mouth (never past A Cross-Line-1 or at B Box-1) is dropped candidate_s
-    after its last message: it nosed in.  0x02/0x03 turn green y s after the
+    after its last message: it nosed in.  A car in the mouth less than 3 s
+    after another southbound car went through it to B Box-1 counts only once
+    at B Box-1 (its A Box-1 / A Cross-Line-1 may be that car's rear or late
+    line, 11/23).  B Box-0, B Box-1 and B Box-2 in that order with no car to
+    explain them and no northbound car about make a southbound car: camera A
+    missed it (11/20 09:37, 11/24 14:09).  0x02/0x03 turn green y s after the
     last southbound car has left.
   * Northbound: C/D/E Box-1 makes a candidate (5%).  C/D Cross-Line-2 (or B
     Cross-Line-2, or any spot from B Box-2 on) makes it a northbound car and
@@ -93,15 +98,22 @@ confidence score:
   * The HuoShih mouth is one car wide, so while a southbound car backs into it
     from deeper in, a "new" southbound car seen only in the mouth since then
     (its rear, or a line it set off while reversing) is that same car.
+    A southbound car that reached A Box-2/B Box-0 and crosses A Cross-Line-2
+    backwards had been past the line, even if A Cross-Line-1 missed it.
   * Roll-back at HuoShih: a northbound car that left at HuoShih 3-30 s ago may
     roll back into the mouth.  When A Box-2/B Box-0 report again after 3 s of
     quiet and F Box-0 has not reported since it left, that car holds the lights
     again, and a southbound car coming in is kept beside it (keep both): the
-    southbound one reaching B Box-1 or crossing A Cross-Line-1 means it was a
+    southbound one crossing B Cross-Line-1 (or further) means it was a
     southbound car; the northbound one leaving again means it was the roll-back
-    (11/23 12:55:30, 14:09:45, 22:14:44).  Its boxes quiet 3 s = left again.
+    (11/23 12:55:30, 14:09:45, 22:14:44).  A Cross-Line-1 and B Box-1 do not
+    tell: the car rolling back sets them off too (11/23 10:19:52, 11/24
+    17:29:02).  Its boxes quiet 3 s = left again.
   * A southbound car never jumps over C/D/E Box-2 into Box-1 (Box-1 also sees
     GuiLan traffic, 11/16 16:00:35).
+  * GuiLan keep-both: a C/D Cross-Line-2 while a southbound car that rolled back
+    from C/D/E Box-1 still stands in C/D/E Box-2 makes only a possible
+    northbound car (11/23 11:00:54), not only within 3 s of the roll-back.
   * Setting backing_stop (Off by default): while a car that had been in the
     lane backs out of its entry end (back in the mouth: A Box-2/B Box-0 or
     nearer HuoShih, C/D/E Box-2 or nearer GuiLan), the arterial behind it is
@@ -112,7 +124,10 @@ confidence score:
     ends once C/D/E Box-1 has reported and then been quiet for backing_clear_s:
     the car has reached the middle of the intersection, where everyone sees
     it; or once C/D/E Box-1 has reported and C/D/E Box-2 has been quiet that
-    long (the car stands in Box-1, out of the lane: 11/22).  It also ends
+    long (the car stands in Box-1, out of the lane: 11/22).  When it ends that
+    way, C/D/E Box-2 is quiet for gone_s too and the car neither crossed a line
+    inwards nor reported further in since the stop began, the northbound car
+    itself has gone back out (11/23 11:21:47).  It also ends
     when the car drives in again (or, before any of those
     reports, is no longer tracked); never before the countdown has turned red,
     never later than max_red.  A northbound car meanwhile waits for 0x01: it turns green when
@@ -581,6 +596,24 @@ class Tracker:
         else:
             self.orphans = [o for o in self.orphans if t - o[0] <= ORPHAN_S] + [(t, key)]
             self.e.trace(f"{label(key)}: no car fits yet")
+            if spot in (4, 6) and self._south_unseen(t, spot):
+                v = self._new(t, key, S, spot, 0.0)     # (i) camera A missed it (11/24 14:09:19)
+                self._adopt(v, t, spot)
+                self._attach(v, t, key, spot, None, created=True)
+
+    def _south_unseen(self, t, spot):
+        """(i) B Box-0 and then B Box-1 / B Box-2 within 3 s that no car explains, with no
+        northbound car anywhere: a southbound car camera A missed completely (11/20 09:37:03,
+        11/24 14:09:17)."""
+        seen = {}
+        for o in self.orphans:                          # (the newest report of each, last 3 s)
+            if o[1][0] == "B" and t - o[0] <= 3:
+                seen.setdefault(o[1], []).append(o[0])
+        if not all(k in seen for k in (("B", "B0"), ("B", "B1"), ("B", "B2"))):
+            return False                                # all three boxes of camera B ...
+        if min(seen[("B", "B0")]) > min(min(seen[("B", "B1")]), min(seen[("B", "B2")])):
+            return False                                # ... B Box-0 first: southbound order
+        return not any(u.live and (u.in_lane or (u.direction == N and u.front <= 7)) for u in self.vehicles)
 
     def _partners(self, v):
         """The other possibility of a rolled-back northbound car (keep both)."""
@@ -739,7 +772,11 @@ class Tracker:
                 # known): the line may be it rolling back, or a northbound car beside it
                 # (11/21 10:10:51-52, 10:49:39-41)
                 just_back = (v.direction == S and spot == EXIT_LINE[S] and v.exit_back_at is not None
-                             and t - v.exit_back_at <= 3 and v.front == SPOT[GUILAN_EXIT[0]])
+                             and v.front == SPOT[GUILAN_EXIT[0]]
+                             and (t - v.exit_back_at <= 3
+                                  # (b) or it still stands in C/D/E Box-2 after rolling back
+                                  # (11/23 11:00:54: 8 s after it rolled back)
+                                  or t - max(v.zones.get(k, -1e18) for k in GUILAN_EXIT) <= self.s.gone_s))
                 if (0 <= past <= 1 or just_back) and (reverse is None or v.vid < reverse.vid):
                     reverse = v
         if reverse is not None:
@@ -890,8 +927,24 @@ class Tracker:
             v.state = "leaving"
             self.e.event(f"{self._name(v)} leaving the lane at {END_NAME[d]} ({label(key)})", "EVENT")
 
+    def _close_behind(self, v, t):
+        """(c) A southbound car in the HuoShih mouth less than 3 s after another southbound car
+        went through it and is at B Box-1 or further: its A Box-1 / A Cross-Line-1 may be that
+        car's rear or late line (11/23 13:20:31, 14:10:48, 14:35:57)."""
+        if v.front > MOUTH[S]:
+            return False
+        for u in self.vehicles:
+            if u is v or u.direction != S or not u.in_lane or u.front < 4:
+                continue
+            at = min((tt for sp, tt in u.first.items() if sp >= MOUTH[S]), default=None)
+            if at is not None and t - at <= 3:
+                return True
+        return False
+
     def _confirms(self, v, key, spot, move):
         if v.direction == S:
+            if self._close_behind(v, v.seen):
+                return v.front >= 4                     # (c) a car only once at B Box-1
             if self.s.south_start == "A Box-1" and key == ("A", "B1") and ("F", "B0") in v.visited:
                 return True                             # turning in from the HuoShih arterial
             return (move == S and spot in (2, 5, 8)) or v.front >= 4 or (
@@ -919,6 +972,10 @@ class Tracker:
             v.before_back = (v.exit_time, v.outer_time, v.state, v.front, dict(v.crossed))
         v.backing = True
         v.seen = t
+        if v.direction == S and spot == EXIT_LINE[N] and v.in_lane and MOUTH[S] in v.first:
+            v.inside = True             # (f) back over A Cross-Line-2 after it reached A Box-2/
+                                        # B Box-0: it had been past the line, even if A Cross-
+                                        # Line-1 missed it (11/24 13:13:45, 11/25 10:53:06)
         v.crossed_back[spot] = (t, key[0])
         v.visited.add(key)
         v.path.append((t, label(key) + " (backwards)"))
@@ -996,12 +1053,14 @@ class Tracker:
                 continue
             if v.partner_n is not None:
                 p = next((u for u in self.vehicles if u.vid == v.partner_n), None)
-                if (v.front > MOUTH[S] or EXIT_LINE[N] in v.crossed) and p is not None and p.live:
+                if (v.front >= 5 or 5 in v.crossed) and p is not None and p.live:
+                    # (k) only past B Cross-Line-1 is it surely a southbound car: a northbound car
+                    # rolling back sets off A Cross-Line-1 and reaches B Box-1 too (11/24 17:29:02)
                     self.finish(p, t, "cancelled", f"it was southbound car #{v.vid} coming in")
                     p.zones = {}                        # its mouth boxes are the southbound car's
                     v.partner_n = None
                 elif p is None or not p.live:
-                    if v.front <= MOUTH[S] and EXIT_LINE[N] not in v.crossed:
+                    if v.front < 5 and 5 not in v.crossed:
                         self.finish(v, t, "cancelled", f"it was northbound car #{v.partner_n} rolling back")
                         v.zones = {}                    # its mouth boxes were the northbound car's
                         continue
@@ -1188,6 +1247,18 @@ class Tracker:
             light = "0x00" if d == S else "0x02/0x03"
             self.e.event(f"{self._name(v)} backing out at {BACK_END[d]}: {why}; {light} "
                          f"released", level)
+            if (d == N and "C/D/E Box-1" in why and v.in_lane
+                    and (v.front - MOUTH[N]) * SIGN[N] <= 0
+                    and t - max(self.last.get(k, -1e18) for k in GUILAN_EXIT) >= s.gone_s
+                    and not any(c[0] >= stop.start for c in v.crossed.values())
+                    and not any(last >= stop.start for k, last in v.zones.items()
+                                if not k[1].startswith("CL") and (SPOT[k] - MOUTH[N]) * SIGN[N] > 0)):
+                # (a) its GuiLan stop ended because it reached C/D/E Box-1, C/D/E Box-2 is quiet
+                # too, and it neither crossed a line in its direction nor reported further in
+                # since the stop began: the car itself has gone too (11/23 11:21:47, 11:22:32;
+                # not 11/20 13:08:26: back in over D Cross-Line-2; not 14:12:17: in C/D Box-2)
+                v.out_why = f"its GuiLan stop ended: {why}"
+                self._backed_out(v, t)
 
     def _backed_out(self, v, t):
         v.state, v.backing, v.parked, v.inside = "candidate", False, False, False
