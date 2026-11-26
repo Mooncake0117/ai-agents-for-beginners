@@ -370,7 +370,7 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 1c81bcfb | 11/22 keep-both window 3 s |
 | 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule |
 | c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (installed 11/24) |
-| (this commit) | 11/26 rules a, b, c, f, i, k (item 19) (**latest**) |
+| f18909da | 11/26 rules a, b, c, f, i, k (item 19) (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
