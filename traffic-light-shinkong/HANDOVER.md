@@ -319,6 +319,27 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    (suspect 14:45:59-14:59:10), whole cars missed 12:09:41 and 14:09:19; camera C 11/25:
    C CL1 72%, C CL2 77% (D covers); 11/25 11:31:21 C/D/E missed a car at GuiLan.
 
+20. **11/26 log (still c0414021 that day) and the 11/27 build** (the user's suggestions):
+   - m: a southbound car that never got past the mouth (no B Box-1, no B Cross-Line-1) is
+     dropped 3 s after its last message, even after A Cross-Line-1 (the user: "verify a true
+     southbound car with B CL-1"). 11/24 09:32: 4 real cars (4 A CL1, 4 B CL1) but car 3
+     waiting at F Box-0 took car 2's A Box-1 at 09:32:31 -> one car too many (#199). Ends 8
+     such phantoms 10-30 s earlier on 15 days.
+   - j: a northbound candidate without C/D Cross-Line-2 is not made a car by B Box-2 less
+     than 3 s after another northbound car was at B Box-2/B Cross-Line-2 (its tail; the
+     user: "no 2nd C/D CL-2"). Fixes 11/25 09:52:33 (0x01 green 20 s less).
+   - Not built: n (a southbound candidate may not take a mouth box a southbound car in the
+     lane covers): right at 11/24 09:32 but wrong at 09:22:41 and 14:07 (a real second car's
+     A Box-1 went to the first car and a northbound phantom followed).
+   - A Box-2 out of HEALTH_ROUTE / SOUTH_ENTRY, so the user can switch A Box-2 off on
+     IP-CAM-A (same spot as B Box-0) without an "A Box-2 suspect" alarm. When the user does,
+     add a dated config_history line in the skill's config.json and drop A:B2 for later logs.
+   Verified: 15 days, no interaction, real exits and no-F-Box-0 stress identical, scenario
+   tests no DANGER. 11/26: 239 S + 242 N real exits, only fast-northbound all-red flags;
+   left: B Cross-Line-1 misfires (16:26:51, 17:15:34; rule 5) and two-way meetings in the
+   lane (10:29:42, 14:45:39, 18:13:17). 00:00:02 "fixed cycle: HTTP server not running" is
+   the old instance stopping during the daily restart.
+
 ## 9. How to analyse a new log and verify a change
 
 1. Upload: `B3_log_YYYY-MM-DD.txt` and `B3_decisions_YYYY-MM-DD.txt` (UTF-16 or UTF-8).
@@ -370,7 +391,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 1c81bcfb | 11/22 keep-both window 3 s |
 | 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule |
 | c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (installed 11/24) |
-| f18909da | 11/26 rules a, b, c, f, i, k (item 19) (**latest**) |
+| f18909da | 11/26 rules a, b, c, f, i, k (item 19) |
+| (this commit) | 11/27 rules m, j; A Box-2 out of the health check (item 20) (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)

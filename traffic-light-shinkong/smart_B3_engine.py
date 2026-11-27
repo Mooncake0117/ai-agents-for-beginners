@@ -59,7 +59,9 @@ confidence score:
     the mouth, or F Box-0 missed), A Box-2 after A Box-1, A Cross-Line-1, B
     Cross-Line-1 or any later spot does the same.  A car seen only at the
     mouth (never past A Cross-Line-1 or at B Box-1) is dropped candidate_s
-    after its last message: it nosed in.  A car in the mouth less than 3 s
+    after its last message: it nosed in.  So is a car that never got past the
+    mouth (no B Box-1, no B Cross-Line-1), even after A Cross-Line-1: a real car
+    always reaches B Box-1 (the user, 11/24 09:32:50).  A car in the mouth less than 3 s
     after another southbound car went through it to B Box-1 counts only once
     at B Box-1 (its A Box-1 / A Cross-Line-1 may be that car's rear or late
     line, 11/23).  B Box-0, B Box-1 and B Box-2 in that order with no car to
@@ -67,7 +69,9 @@ confidence score:
     missed it (11/20 09:37, 11/24 14:09).  0x02/0x03 turn green y s after the
     last southbound car has left.
   * Northbound: C/D/E Box-1 makes a candidate (5%).  C/D Cross-Line-2 (or B
-    Cross-Line-2, or any spot from B Box-2 on) makes it a northbound car and
+    Cross-Line-2, or any spot from B Box-2 on) makes it a northbound car (B Box-2
+    less than 3 s after another northbound car went through it does not: that is
+    the other car's tail, 11/25 09:52:33) and
     starts the 0x00 countdown, z1 = 3 s if A Box-0 saw a car in the last 1 s,
     else z2 = 2 s; then 0x00 red, w s later 0x01 green.  When the last
     northbound car has left, 0x01 counts down u s, turns red, and 0x00 turns
@@ -214,15 +218,17 @@ GUILAN_EXIT = [("C", "B2"), ("D", "B2"), ("E", "B2")]   # the GuiLan exit, two c
 HUOSHIH_MOUTH = [("A", "B1"), ("A", "B2"), ("B", "B0")]  # one car wide: a line there is the car in it
 
 # zones every clean trip should fire (camera health); a set = any one of them
+# A Box-2 is not checked: B Box-0 watches the same spot, and the user may switch A Box-2 off
+# to lighten camera A (11/27)
 HEALTH_ROUTE = {
-    S: [("A", "B1"), ("A", "CL1"), ("A", "B2"), ("B", "B0"), ("B", "B1"), ("B", "CL1"),
+    S: [("A", "B1"), ("A", "CL1"), ("B", "B0"), ("B", "B1"), ("B", "CL1"),
         ("B", "B2"), frozenset({("C", "B2"), ("D", "B2"), ("E", "B2")}),
         ("C", "CL1"), ("D", "CL1")],
     N: [("C", "CL2"), ("D", "CL2"), frozenset({("C", "B2"), ("D", "B2"), ("E", "B2")}),
-        ("B", "B2"), ("B", "CL2"), ("B", "B1"), ("B", "B0"), ("A", "B2"), ("A", "CL2"),
+        ("B", "B2"), ("B", "CL2"), ("B", "B1"), ("B", "B0"), ("A", "CL2"),
         ("A", "B1")],
 }
-SOUTH_ENTRY = {"A": [("A", "B1"), ("A", "CL1"), ("A", "B2")],
+SOUTH_ENTRY = {"A": [("A", "B1"), ("A", "CL1")],
                "B": [("B", "B0"), ("B", "B1"), ("B", "CL1")]}
 
 ROLLBACK_S = 30.0       # a northbound car that left at HuoShih may roll back into the mouth this long after
@@ -949,7 +955,24 @@ class Tracker:
                 return True                             # turning in from the HuoShih arterial
             return (move == S and spot in (2, 5, 8)) or v.front >= 4 or (
                 move is None and spot == 3 and ("A", "B1") in v.visited)
+        if self._close_behind_n(v, v.seen):
+            return (move == N and spot in (8, 5)) or v.front <= 4    # (j)
         return (move == N and spot in (8, 5)) or v.front <= 6
+
+    def _close_behind_n(self, v, t):
+        """(j) A northbound candidate without C/D Cross-Line-2 reaching B Box-2 less than 3 s after
+        another northbound car went through B Box-2 and is past B Cross-Line-2: that B Box-2
+        was the other car's tail (11/23 11:08:05, 11/25 09:52:33); it counts only with B
+        Cross-Line-2 or B Box-1."""
+        if v.front < 6:
+            return False
+        for u in self.vehicles:
+            if u is v or u.direction != N or not u.in_lane or u.front > 5:
+                continue
+            at = max((tt for sp, tt in u.first.items() if 5 <= sp <= 6), default=None)
+            if at is not None and t - at <= 3:          # it was at B Box-2 / B Cross-Line-2
+                return True
+        return False
 
     def _activate(self, v, t, key):
         v.state, v.entered, v.backing = "active", True, False
@@ -1065,6 +1088,13 @@ class Tracker:
                         v.zones = {}                    # its mouth boxes were the northbound car's
                         continue
                     v.partner_n = None
+            if (v.direction == S and not v.parked and v.partner_n is None and v.front <= MOUTH[S]
+                    and not any(sp > MOUTH[S] for sp in v.first) and t - v.seen > s.candidate_s):
+                # (m) never past the one-car-wide mouth (no B Box-1, no B Cross-Line-1) and
+                # quiet: not a car of its own, like a nose-in (the user, 11/24 09:32:50)
+                self.finish(v, t, "cancelled", "never got past the HuoShih mouth (no B Box-1 or "
+                                               "B Cross-Line-1)")
+                continue
             if (v.direction == N and v.back_at is not None and t - v.back_at >= s.gone_s
                     and t - max(v.zones.values(), default=-1e18) >= s.gone_s):
                 self.finish(v, t, "ended", f"left at HuoShih again (its boxes quiet {s.gone_s:g} s)")

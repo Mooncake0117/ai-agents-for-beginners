@@ -322,3 +322,13 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   exit second); 11/24 13:13:45 and 11/25 10:53:06 are southbound back-outs over A CL2
   (no 0x00 stop: no A CL1), not northbound exits.
 - Roll-back revivals live: 11/24 10:19:40, 11:42:33, 16:10:42, 17:29:01; 11/25 11:44:07.
+
+## 2026-11-26 (live c0414021; the user checked IP-CAM-A and IP-CAM-C on site)
+
+- 239 S / 242 N trips (+8 both lines). Every stage 100% except B B0 99% and A CL2 97%
+  (S: A CL1 100% again, camera C lines back up; whole-car misses: none).
+- Live: 239 + 242 real exits, flags only fast northbound all-red (safe).
+- 11/24 09:32 recount (the user): 4 southbound cars (4 A CL1, 4 B CL1); the 5th program car
+  came from car 3 waiting at F Box-0 taking car 2's A Box-1 while car 2 was in the mouth.
+- The user proposes switching A Box-2 off (same spot as B Box-0). If done, add a dated
+  config_history line and drop A:B2 for later logs.
