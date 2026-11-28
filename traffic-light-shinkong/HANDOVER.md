@@ -413,7 +413,7 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (installed 11/24) |
 | f18909da | 11/26 rules a, b, c, f, i, k (item 19) |
 | 58c99d12 | 11/27 rules m, j; A Box-2 out of the health check (item 20) (installed 11/27 01:28) |
-| (this commit) | 11/28 rule p, j improved (item 21) (**latest**) |
+| c9fa65e3 | 11/28 rule p, j improved (item 21) (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
