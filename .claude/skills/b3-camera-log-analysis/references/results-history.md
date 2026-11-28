@@ -332,3 +332,10 @@ Hit rates are "hit (healthy)" from section 6 unless noted; S = southbound, N = n
   came from car 3 waiting at F Box-0 taking car 2's A Box-1 while car 2 was in the mouth.
 - The user proposes switching A Box-2 off (same spot as B Box-0). If done, add a dated
   config_history line and drop A:B2 for later logs.
+
+## 2026-11-27 (live 58c99d12 from 01:28:52; A Box-2 still on that day, switched off 11/28 03:38)
+
+- 175 S / 179 N trips (+11 both lines). Every stage >= 97%: A CL2 97% (5 misses), F B0, A CL1,
+  B B0, B B1 99%; 13:58:52 one southbound trip without A CL1/B B0/B B1 (nose-in pattern).
+- Live: 175 + 179 real exits, 1 flag (17:30:51 fast northbound all-red, safe).
+- For logs from 11/28 03:38 on: run the script with --drop A:B2.

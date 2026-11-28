@@ -70,8 +70,8 @@ confidence score:
     last southbound car has left.
   * Northbound: C/D/E Box-1 makes a candidate (5%).  C/D Cross-Line-2 (or B
     Cross-Line-2, or any spot from B Box-2 on) makes it a northbound car (B Box-2
-    less than 3 s after another northbound car went through it does not: that is
-    the other car's tail, 11/25 09:52:33) and
+    less than 3 s after another northbound car went through it does not, and is
+    left to that car: it is its tail, 11/25 09:52:33, 11/27 14:24:33) and
     starts the 0x00 countdown, z1 = 3 s if A Box-0 saw a car in the last 1 s,
     else z2 = 2 s; then 0x00 red, w s later 0x01 green.  When the last
     northbound car has left, 0x01 counts down u s, turns red, and 0x00 turns
@@ -103,7 +103,10 @@ confidence score:
     from deeper in, a "new" southbound car seen only in the mouth since then
     (its rear, or a line it set off while reversing) is that same car.
     A southbound car that reached A Box-2/B Box-0 and crosses A Cross-Line-2
-    backwards had been past the line, even if A Cross-Line-1 missed it.
+    backwards had been past the line, even if A Cross-Line-1 missed it.  A
+    Cross-Line-2 also counts as a southbound car backing out while the car is
+    still placed at B Box-1 but its latest boxes are back in the mouth (11/27
+    19:34:20).
   * Roll-back at HuoShih: a northbound car that left at HuoShih 3-30 s ago may
     roll back into the mouth.  When A Box-2/B Box-0 report again after 3 s of
     quiet and F Box-0 has not reported since it left, that car holds the lights
@@ -545,6 +548,9 @@ class Tracker:
                     # GuiLan traffic, and its own line behind it would make a new car, 11/16 16:00:35)
                     if v.direction == S and not v.in_lane and self._north_holds(key, spot, t):
                         continue                        # one car wide: that box is the northbound car
+                    if (v.direction == N and not v.in_lane and spot == 6
+                            and self._close_behind_n(v, t)):
+                        continue                        # (j) the car ahead's late B Box-2 (11/27 14:24:33)
                     rank = (1, not v.in_lane, b, -v.seen)    # ahead; cars in the lane first
                 elif b == -1 and v.in_lane and not (spot == 0 and v.front > 1):
                     rank = (2, -v.seen)                 # the box just behind, car straddles both
@@ -783,7 +789,14 @@ class Tracker:
                                   # (b) or it still stands in C/D/E Box-2 after rolling back
                                   # (11/23 11:00:54: 8 s after it rolled back)
                                   or t - max(v.zones.get(k, -1e18) for k in GUILAN_EXIT) <= self.s.gone_s))
-                if (0 <= past <= 1 or just_back) and (reverse is None or v.vid < reverse.vid):
+                # (p) a southbound car still placed at B Box-1 whose latest boxes are back in the
+                # mouth (A Box-1, A Box-2/B Box-0): A Cross-Line-2 is it backing out (11/27 19:34:20)
+                back_in_mouth = (v.direction == S and spot == EXIT_LINE[N] and past == 2 and v.in_lane
+                                 and max(v.zones.get(k, -1e18) for k in HUOSHIH_MOUTH)
+                                 > max((last for k, last in v.zones.items()
+                                        if not k[1].startswith("CL") and SPOT[k] > MOUTH[S]), default=-1e18)
+                                 and t - max(v.zones.get(k, -1e18) for k in HUOSHIH_MOUTH) <= self.s.occupied_s)
+                if (0 <= past <= 1 or just_back or back_in_mouth) and (reverse is None or v.vid < reverse.vid):
                     reverse = v
         if reverse is not None:
             if not reverse.live:

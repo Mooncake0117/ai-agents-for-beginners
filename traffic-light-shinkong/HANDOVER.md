@@ -340,6 +340,26 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
    lane (10:29:42, 14:45:39, 18:13:17). 00:00:02 "fixed cycle: HTTP server not running" is
    the old instance stopping during the daily restart.
 
+21. **11/27 log (58c99d12 installed 11/27 01:28:52; A Box-2 switched off 11/28 03:38) and
+   the 11/28 build:** 175 S + 179 N real exits, one flag (17:30:51 fast northbound all-red,
+   safe); every camera stage >= 97% (A CL2 97%). Rule a fired 3 times as intended.
+   - p: A Cross-Line-2 counts as a southbound car backing out also while the car is still
+     placed at B Box-1 but its latest boxes are back in the mouth. 19:34:20 the line was
+     ignored: no 0x00 stop for the car backing onto HuoShih, 0x02/0x03 red 20 s for nothing.
+     Also 11/24 07:49 (0x00 stop now ends at F Box-2 instead of 18 s after the car left) and
+     10:41 (stop 1 s earlier, 5 s shorter).
+   - j improved: the late B Box-2 is not taken by the northbound candidate at all (it went to
+     C/D/E side, then became a car 2 s later and stole the next real car's B Cross-Line-2 and
+     exit: 14:24:33/14:24:44). Also prevents 11/23 11:08:05 completely.
+   - Record only: B Cross-Line-1 misfire while a northbound car passed (16:23:49, rule 5);
+     12:20:50 northbound car left with A Box-1 and A Cross-Line-2 both missed (20 s 0x00
+     red); 11:18:30 two-way meeting; D Cross-Line-1 4 s after C Cross-Line-1 for one car
+     makes an "unseen" southbound car (10:37:34, ~5 s red).
+   - Skill config.json: config_history lines for the F Box-0 move (11/21) and A Box-2 off
+     (11/28 03:38: use --drop A:B2 for later logs).
+   Verified: 16 days, no interaction, real exits and no-F-Box-0 stress identical, scenario
+   tests no DANGER (one backing scenario releases GuiLan 1 s later).
+
 ## 9. How to analyse a new log and verify a change
 
 1. Upload: `B3_log_YYYY-MM-DD.txt` and `B3_decisions_YYYY-MM-DD.txt` (UTF-16 or UTF-8).
@@ -392,7 +412,8 @@ cars 21 -> 3 (left: B lines, 10/28 11:04:45, 10/29 12:53:47, 10/30 14:33:13). Co
 | 95eea501 | 11/23 GuiLan Box-1 rules + HuoShih mouth rule |
 | c0414021 | 11/23 northbound roll-back at HuoShih + no jump into C/D/E Box-1 (installed 11/24) |
 | f18909da | 11/26 rules a, b, c, f, i, k (item 19) |
-| 58c99d12 | 11/27 rules m, j; A Box-2 out of the health check (item 20) (**latest**) |
+| 58c99d12 | 11/27 rules m, j; A Box-2 out of the health check (item 20) (installed 11/27 01:28) |
+| (this commit) | 11/28 rule p, j improved (item 21) (**latest**) |
 | dbcfbabd, f499a3c0 | analysis notes (results-history.md) |
 
 ## 12. Mistakes made before (do not repeat)
